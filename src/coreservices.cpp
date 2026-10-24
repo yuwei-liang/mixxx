@@ -38,6 +38,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDir>
+#include <QDateTime>
+#include <QFileInfo>
 #include "analyzer/analyzerscheduledtrack.h"
 #include "control/controlproxy.h"
 #include <QJsonDocument>
@@ -511,11 +513,43 @@ void CoreServices::initialize(QApplication* pApp) {
     // still taken (by a cue not listed in replaceLabels) is skipped. Working on
     // the Track object, not the database, means a loaded deck updates at once
     // and Mixxx saves it like any other edit.
+    //
+    // Progress: each running analysis keeps a <name>.status file there,
+    //   {"total": 31, "done": 7, "failed": 1}
+    // rewritten as it goes and removed when it ends. Their sum is published as
+    // [ExternalAnalysis],total / done / failed (all 0 when nothing runs) for the
+    // window title and controller screens. A file left by a crashed run is
+    // ignored once it is five minutes old.
     if (const QString inbox = qEnvironmentVariable("MIXXX_EXTERNAL_INBOX"); !inbox.isEmpty()) {
         QDir().mkpath(inbox);
+        const QString group = QStringLiteral("[ExternalAnalysis]");
+        auto* pTotal = new ControlObject(ConfigKey(group, QStringLiteral("total")));
+        auto* pDone = new ControlObject(ConfigKey(group, QStringLiteral("done")));
+        auto* pFailed = new ControlObject(ConfigKey(group, QStringLiteral("failed")));
+        for (auto* pControl : {pTotal, pDone, pFailed}) {
+            pControl->setParent(this);
+        }
         auto* pTimer = new QTimer(this);
-        connect(pTimer, &QTimer::timeout, this, [this, inbox]() {
+        connect(pTimer, &QTimer::timeout, this, [this, inbox, pTotal, pDone, pFailed]() {
             const QDir dir(inbox);
+            int total = 0;
+            int done = 0;
+            int failed = 0;
+            const QDateTime stale = QDateTime::currentDateTime().addSecs(-300);
+            for (const QFileInfo& info : dir.entryInfoList(
+                         {QStringLiteral("*.status")}, QDir::Files)) {
+                QFile file(info.filePath());
+                if (info.lastModified() < stale || !file.open(QIODevice::ReadOnly)) {
+                    continue;
+                }
+                const QJsonObject progress = QJsonDocument::fromJson(file.readAll()).object();
+                total += progress.value(QStringLiteral("total")).toInt();
+                done += progress.value(QStringLiteral("done")).toInt();
+                failed += progress.value(QStringLiteral("failed")).toInt();
+            }
+            pTotal->set(total);
+            pDone->set(done);
+            pFailed->set(failed);
             const QStringList names = dir.entryList({QStringLiteral("*.json")}, QDir::Files);
             for (const QString& name : names) {
                 QFile file(dir.filePath(name));

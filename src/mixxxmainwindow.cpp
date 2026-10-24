@@ -35,6 +35,8 @@
 #include "broadcast/broadcastmanager.h"
 #endif
 #include "control/controlindicatortimer.h"
+#include "control/controlobject.h"
+#include "control/controlproxy.h"
 #include "library/library.h"
 #include "library/library_decl.h"
 #include "library/library_prefs.h"
@@ -443,6 +445,17 @@ void MixxxMainWindow::initialize() {
             this,
             &MixxxMainWindow::slotUpdateWindowTitle);
 
+    // LOCAL(dj-library): external analysis progress in the title, "allin1 7/31"
+    if (!qEnvironmentVariable("MIXXX_EXTERNAL_INBOX").isEmpty()) {
+        for (const auto* key : {"total", "done"}) {
+            auto* pProxy = new ControlProxy(
+                    QStringLiteral("[ExternalAnalysis]"), QString::fromLatin1(key), this);
+            pProxy->connectValueChanged(this, [this](double) {
+                slotUpdateWindowTitle(m_pTitleTrack);
+            });
+        }
+    }
+
     // Start Auto DJ if the cmdline arg is passed.
     if (CmdlineArgs::Instance().getStartAutoDJ()) {
         qDebug("Enabling Auto DJ from CLI flag.");
@@ -785,8 +798,20 @@ QDialog::DialogCode MixxxMainWindow::noOutputDlg(bool* continueClicked) {
 }
 
 void MixxxMainWindow::slotUpdateWindowTitle(TrackPointer pTrack) {
+    m_pTitleTrack = pTrack;
     QString appTitle = VersionStore::applicationName();
     QString filePath;
+    const int analysisTotal = static_cast<int>(
+            ControlObject::get(ConfigKey("[ExternalAnalysis]", "total")));
+    if (analysisTotal > 0) {
+        appTitle = QStringLiteral("%1 — %2 %3/%4")
+                           .arg(appTitle,
+                                   qEnvironmentVariable("MIXXX_EXTERNAL_ANALYZER_NAME",
+                                           QStringLiteral("Analysis")),
+                                   QString::number(static_cast<int>(ControlObject::get(
+                                           ConfigKey("[ExternalAnalysis]", "done")))),
+                                   QString::number(analysisTotal));
+    }
 
     // If we have a track, use getInfo() to format a summary string and prepend
     // it to the title.

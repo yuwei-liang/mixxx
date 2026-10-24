@@ -105,6 +105,8 @@ class MixxxMainWindow : public QMainWindow {
     void closeEvent(QCloseEvent *event) override;
 
   private:
+    // the track the title names, kept so analysis progress can redraw it
+    TrackPointer m_pTitleTrack;
     void initializeWindow();
     void checkDirectRendering();
 
