@@ -98,6 +98,9 @@ class QmlLibraryProxy : public QObject {
     Q_PROPERTY(bool enginePrimeExportAvailable READ enginePrimeExportAvailable CONSTANT)
     Q_PROPERTY(QString waveformCacheDiskUsage READ waveformCacheDiskUsage NOTIFY
                     waveformCacheDiskUsageChanged)
+    // The library window's open list and the rows around its selection (see
+    // LibraryControl::browseState()), for controller screens to mirror.
+    Q_PROPERTY(QVariantMap browseState READ browseState NOTIFY browseStateChanged)
     QML_NAMED_ELEMENT(Library)
     QML_SINGLETON
 
@@ -213,7 +216,12 @@ class QmlLibraryProxy : public QObject {
             mixxx::qml::QmlTrackProxy* track,
             int hotcueNumber);
 
+    QVariantMap browseState() const {
+        return m_browseState;
+    }
+
   signals:
+    void browseStateChanged();
     void libraryScanActiveChanged();
     void waveformCacheDiskUsageChanged();
     void libraryScanSummaryAvailable(
@@ -226,6 +234,7 @@ class QmlLibraryProxy : public QObject {
     static inline std::shared_ptr<Library> s_pLibrary;
 
     QString m_waveformCacheDiskUsage;
+    QVariantMap m_browseState;
 
     /// This needs to be a plain pointer because it's used as a `Q_PROPERTY` member variable.
     QmlLibraryTrackListModel* m_pModelProperty;

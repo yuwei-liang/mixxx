@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QMutex>
 #include <QObject>
+#include <QTimer>
+#include <QVariantMap>
 #include <memory>
 
 #include "control/controlproxy.h"
@@ -63,7 +66,14 @@ class LibraryControl : public QObject {
             Qt::FocusReason focusReason = Qt::OtherFocusReason);
     FocusWidget getFocusedWidget();
 
+    /// What the library widgets show right now, for controller screens: the
+    /// open list, which pane has the focus and the rows around the selection.
+    /// Plain values, so it can be read and passed to any thread.
+    QVariantMap browseState() const;
+
   signals:
+    void browseStateChanged(const QVariantMap& state);
+
     void clearSearchIfClearButtonHasFocus();
     void showHideTrackMenu(bool show);
 
@@ -141,6 +151,13 @@ class LibraryControl : public QObject {
 
   private:
     Library* m_pLibrary;
+
+    void updateBrowseState();
+    QVariantMap sidebarBrowseState() const;
+    QVariantMap trackTableBrowseState() const;
+    QTimer m_browseStateTimer;
+    mutable QMutex m_browseStateMutex;
+    QVariantMap m_browseState;
 
     // Simulate pressing a key on the keyboard
     void emitKeyEvent(QKeyEvent&& event);

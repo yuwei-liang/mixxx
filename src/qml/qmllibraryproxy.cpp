@@ -11,6 +11,7 @@
 #include "control/controlobject.h"
 #include "library/dao/analysisdao.h"
 #include "library/library.h"
+#include "library/librarycontrol.h"
 #include "library/library_prefs.h"
 #include "library/librarytablemodel.h"
 #include "library/trackcollection.h"
@@ -174,6 +175,18 @@ QmlLibraryProxy::QmlLibraryProxy(QObject* parent)
             &QmlLibraryScannerProxy::stateChanged,
             this,
             &QmlLibraryProxy::libraryScanActiveChanged);
+    if (LibraryControl* pLibraryControl = s_pLibrary->libraryControl()) {
+        m_browseState = pLibraryControl->browseState();
+        // LibraryControl lives on the GUI thread and a controller screen's
+        // engine on its own, so the snapshot arrives as a queued copy.
+        connect(pLibraryControl,
+                &LibraryControl::browseStateChanged,
+                this,
+                [this](const QVariantMap& state) {
+                    m_browseState = state;
+                    emit browseStateChanged();
+                });
+    }
     TrackCollectionManager* pTrackCollectionManager =
             s_pLibrary->trackCollectionManager();
     VERIFY_OR_DEBUG_ASSERT(pTrackCollectionManager) {

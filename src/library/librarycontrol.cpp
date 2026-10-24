@@ -11,7 +11,9 @@
 #include "control/controlobject.h"
 #include "control/controlpushbutton.h"
 #include "library/library.h"
+#include "library/dao/trackschema.h"
 #include "library/libraryview.h"
+#include "library/trackmodel.h"
 #include "mixer/playermanager.h"
 #include "moc_librarycontrol.cpp"
 #include "util/cmdlineargs.h"
@@ -99,6 +101,13 @@ LibraryControl::LibraryControl(Library* pLibrary)
           m_numSamplers(kAppGroup, QStringLiteral("num_samplers"), this),
           m_numPreviewDecks(kAppGroup, QStringLiteral("num_preview_decks"), this) {
     qRegisterMetaType<FocusWidget>("FocusWidget");
+
+    // Controller screens mirror the library widgets. Nothing tells us when a
+    // table scrolls, sorts or swaps its model, so look ten times a second and
+    // pass on only what changed.
+    m_browseStateTimer.setInterval(100);
+    connect(&m_browseStateTimer, &QTimer::timeout, this, &LibraryControl::updateBrowseState);
+    m_browseStateTimer.start();
 
     slotNumDecksChanged(m_numDecks.get());
     slotNumSamplersChanged(m_numSamplers.get());
@@ -1265,4 +1274,121 @@ void LibraryControl::slotTrackRatingChangeRequestRelative(int change) {
     if (pTrackTableView) {
         pTrackTableView->trackRatingChangeRequestRelative(change);
     }
+}
+
+namespace {
+// rows sent either side of the selection
+constexpr int kBrowseRowsAround = 6;
+
+// The rows to send: the selection in the middle, the window slid inwards at
+// either end of the list so it stays full.
+std::pair<int, int> browseWindow(int selected, int count) {
+    const int size = 2 * kBrowseRowsAround + 1;
+    int first = std::max(selected, 0) - kBrowseRowsAround;
+    first = std::max(0, std::min(first, count - size));
+    return {first, std::min(count - 1, first + size - 1)};
+}
+
+QString sidebarPath(const QModelIndex& index) {
+    QStringList parts;
+    for (QModelIndex i = index; i.isValid(); i = i.parent()) {
+        parts.prepend(i.data(Qt::DisplayRole).toString());
+    }
+    return parts.join(QStringLiteral(" › "));
+}
+} // namespace
+
+QVariantMap LibraryControl::browseState() const {
+    const QMutexLocker lock(&m_browseStateMutex);
+    return m_browseState;
+}
+
+void LibraryControl::updateBrowseState() {
+    QVariantMap state = m_focusedWidget == FocusWidget::Sidebar
+            ? sidebarBrowseState()
+            : trackTableBrowseState();
+    if (m_pSidebarWidget) {
+        state.insert(QStringLiteral("path"), sidebarPath(m_pSidebarWidget->currentIndex()));
+    }
+    {
+        const QMutexLocker lock(&m_browseStateMutex);
+        if (state == m_browseState) {
+            return;
+        }
+        m_browseState = state;
+    }
+    emit browseStateChanged(state);
+}
+
+QVariantMap LibraryControl::sidebarBrowseState() const {
+    QVariantMap state;
+    state.insert(QStringLiteral("focus"), QStringLiteral("sidebar"));
+    if (!m_pSidebarWidget || !m_pSidebarWidget->model()) {
+        return state;
+    }
+    const QModelIndex current = m_pSidebarWidget->currentIndex();
+    const QModelIndex parent = current.parent();
+    const QAbstractItemModel* pModel = m_pSidebarWidget->model();
+    const int count = pModel->rowCount(parent);
+    const int selected = current.isValid() ? current.row() : -1;
+    const auto [first, last] = browseWindow(selected, count);
+    QVariantList rows;
+    for (int row = first; row <= last; ++row) {
+        const QModelIndex index = pModel->index(row, 0, parent);
+        QVariantMap item;
+        item.insert(QStringLiteral("title"), index.data(Qt::DisplayRole).toString());
+        item.insert(QStringLiteral("folder"), pModel->hasChildren(index));
+        item.insert(QStringLiteral("selected"), row == selected);
+        rows.append(item);
+    }
+    state.insert(QStringLiteral("rows"), rows);
+    state.insert(QStringLiteral("selectedRow"), selected);
+    state.insert(QStringLiteral("rowCount"), count);
+    return state;
+}
+
+QVariantMap LibraryControl::trackTableBrowseState() const {
+    QVariantMap state;
+    state.insert(QStringLiteral("focus"), QStringLiteral("tracks"));
+    WTrackTableView* pView = m_pLibraryWidget
+            ? m_pLibraryWidget->getCurrentTrackTableView()
+            : nullptr;
+    const QAbstractItemModel* pModel = pView ? pView->model() : nullptr;
+    const auto* pTrackModel = dynamic_cast<const TrackModel*>(pModel);
+    if (!pTrackModel || !pModel) {
+        return state;
+    }
+    const int count = pModel->rowCount();
+    const QModelIndex current = pView->currentIndex();
+    const int selected = current.isValid() ? current.row() : -1;
+    const auto [first, last] = browseWindow(selected, count);
+    const auto text = [&](int row, const QString& field) {
+        const int column = pTrackModel->fieldIndex(field);
+        return column < 0
+                ? QString()
+                : pModel->index(row, column).data(Qt::DisplayRole).toString();
+    };
+    QVariantList rows;
+    for (int row = first; row <= last; ++row) {
+        QVariantMap item;
+        item.insert(QStringLiteral("title"), text(row, LIBRARYTABLE_TITLE));
+        item.insert(QStringLiteral("artist"), text(row, LIBRARYTABLE_ARTIST));
+        item.insert(QStringLiteral("bpm"), text(row, LIBRARYTABLE_BPM));
+        item.insert(QStringLiteral("key"), text(row, LIBRARYTABLE_KEY));
+        item.insert(QStringLiteral("duration"), text(row, LIBRARYTABLE_DURATION));
+        // raw values, for screens that compare tracks with what is playing:
+        // the key as Mixxx's ChromaticKey number (0 = none), BPM as a number
+        const auto raw = [&](const QString& field) {
+            const int column = pTrackModel->fieldIndex(field);
+            return column < 0 ? QVariant() : pModel->index(row, column).data(Qt::EditRole);
+        };
+        item.insert(QStringLiteral("keyId"), raw(LIBRARYTABLE_KEY_ID).toInt());
+        item.insert(QStringLiteral("bpmValue"), raw(LIBRARYTABLE_BPM).toDouble());
+        item.insert(QStringLiteral("selected"), row == selected);
+        rows.append(item);
+    }
+    state.insert(QStringLiteral("rows"), rows);
+    state.insert(QStringLiteral("selectedRow"), selected);
+    state.insert(QStringLiteral("rowCount"), count);
+    return state;
 }
