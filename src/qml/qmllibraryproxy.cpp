@@ -5,6 +5,7 @@
 #include <QQmlEngine>
 #include <QSqlDatabase>
 #include <QStringList>
+#include <QThread>
 #include <cmath>
 
 #include "control/controlobject.h"
@@ -155,8 +156,15 @@ QmlLibraryScannerProxy::QmlLibraryScannerProxy(LibraryScanner* libraryScanner,
 
 QmlLibraryProxy::QmlLibraryProxy(QObject* parent)
         : QObject(parent),
-          m_pModelProperty(new QmlLibraryTrackListModel(
-                  QList<QmlLibraryTrackListColumn*>{}, s_pLibrary->trackTableModel(), this)),
+          // The track list model proxies the GUI's own LibraryTableModel, so
+          // it may only live on that model's thread. A controller screen's
+          // engine has its own thread; there a proxy model raced the library
+          // view and crashed it while painting (BaseTrackTableModel::data).
+          m_pModelProperty(QThread::currentThread() == s_pLibrary->thread()
+                          ? new QmlLibraryTrackListModel(QList<QmlLibraryTrackListColumn*>{},
+                                    s_pLibrary->trackTableModel(),
+                                    this)
+                          : nullptr),
           m_pScanner(new QmlLibraryScannerProxy(
                   s_pLibrary->trackCollectionManager()->scanner(),
                   s_pLibrary->trackCollectionManager(),
