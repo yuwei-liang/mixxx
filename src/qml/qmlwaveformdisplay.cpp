@@ -443,6 +443,11 @@ QSGNode* QmlWaveformDisplay::updatePaintNode(QSGNode* node, UpdatePaintNodeData*
     }
 
     onPreRender(this);
+    // TEMP(dj-library): trace the computed play position per frame
+    static const bool kTrace = qEnvironmentVariableIsSet("MIXXX_WAVEFORM_TRACE");
+    if (kTrace && getGroup() == QStringLiteral("[Channel1]")) {
+        qInfo() << "WFTRACE" << getPlayPosVSample() << getTotalVSample();
+    }
 
     for (auto* pRenderer : std::as_const(m_rendererStack)) {
         pRenderer->update();

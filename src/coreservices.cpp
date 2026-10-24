@@ -30,6 +30,12 @@
 #include "library/trackcollectionmanager.h"
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
+#include "controllers/scripting/legacy/controllerscriptinterfacelegacy.h"
+#include <QFile>
+#include "analyzer/analyzerscheduledtrack.h"
+#include "control/controlproxy.h"
+#include <QJsonDocument>
+#include <QTimer>
 #include "moc_coreservices.cpp"
 #include "preferences/dialog/dlgpreferences.h"
 #include "preferences/settingsmanager.h"
@@ -487,6 +493,77 @@ void CoreServices::initialize(QApplication* pApp) {
     }
 
     ScopedTimer t(QStringLiteral("CoreServices::initialize"));
+
+    // TEMP(dj-library): test harness. With MIXXX_TEST_COMMANDS=<file>, lines
+    // appended to that file are run every 50 ms and the file is emptied:
+    //   set <group> <key> <value>      e.g. set [Channel1] play 1
+    //   shared <json>                  replaces controller shared data
+    //   load <group> <file>            loads a file into a deck
+    //   analyze <id> [<id> ...]        queues library tracks for analysis
+    if (const QString commandFile = qEnvironmentVariable("MIXXX_TEST_COMMANDS");
+            !commandFile.isEmpty()) {
+        auto* pTimer = new QTimer(this);
+        connect(pTimer, &QTimer::timeout, this, [this, commandFile]() {
+            QFile file(commandFile);
+            if (!file.open(QIODevice::ReadWrite | QIODevice::Text)) {
+                return;
+            }
+            const QString text = QString::fromUtf8(file.readAll());
+            file.resize(0);
+            file.close();
+            const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            for (const QString& line : lines) {
+                if (line.startsWith(QStringLiteral("shared "))) {
+                    const QJsonDocument doc = QJsonDocument::fromJson(line.mid(7).toUtf8());
+                    ControllerScriptInterfaceLegacy::publishSharedData(doc.toVariant());
+                    qInfo() << "TESTCMD shared" << line.mid(7);
+                    continue;
+                }
+                if (line.startsWith(QStringLiteral("analyze "))) {
+                    // analyze <track id> [<track id> ...]
+                    QList<AnalyzerScheduledTrack> tracks;
+                    const QStringList ids = line.mid(8).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+                    for (const QString& id : ids) {
+                        tracks.append(AnalyzerScheduledTrack(TrackId(QVariant(id.toInt()))));
+                    }
+                    if (m_pLibrary) {
+                        emit m_pLibrary->analyzeTracks(tracks);
+                    }
+                    qInfo() << "TESTCMD analyze" << tracks.size() << "tracks";
+                    continue;
+                }
+                if (line.startsWith(QStringLiteral("load "))) {
+                    // load <group> <file path, may contain spaces>
+                    const int space = line.indexOf(QLatin1Char(' '), 5);
+                    const QString group = line.mid(5, space - 5);
+                    const QString location = line.mid(space + 1);
+                    if (m_pPlayerManager) {
+                        m_pPlayerManager->slotLoadLocationToPlayer(location, group, false);
+                    }
+                    qInfo() << "TESTCMD load" << group << location;
+                    continue;
+                }
+                const QStringList parts = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+                if (parts.size() == 4 && parts[0] == QStringLiteral("set")) {
+                    // through a proxy, as a controller script does: engine
+                    // controls take outside changes as requests, which a plain
+                    // ControlObject::set() from here bypasses
+                    ControlProxy control(ConfigKey(parts[1], parts[2]),
+                            nullptr,
+                            ControlFlag::NoAssertIfMissing);
+                    if (control.valid()) {
+                        control.set(parts[3].toDouble());
+                        qInfo() << "TESTCMD set" << parts[1] << parts[2] << parts[3];
+                    } else {
+                        qWarning() << "TESTCMD no such control" << parts[1] << parts[2];
+                    }
+                    continue;
+                }
+                qWarning() << "TESTCMD cannot parse" << line;
+            }
+        });
+        pTimer->start(50);
+    }
 
     VERIFY_OR_DEBUG_ASSERT(SoundSourceProxy::registerProviders()) {
         qCritical() << "Failed to register any SoundSource providers";

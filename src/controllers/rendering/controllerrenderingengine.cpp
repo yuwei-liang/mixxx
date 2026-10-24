@@ -2,6 +2,8 @@
 
 #include <QGuiApplication>
 #include <QOffscreenSurface>
+#include <QDateTime>
+#include <QFile>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
@@ -452,6 +454,20 @@ void ControllerRenderingEngine::renderFrame() {
 #else
     fboImage.mirror(false, true);
 #endif
+
+    // TEMP(dj-library): with MIXXX_SCREEN_DUMP=<dir>, keep every rendered
+    // frame as raw pixels (<screen>-<ms since epoch>.raw) for offline checks.
+    static const QString kDumpDir = qEnvironmentVariable("MIXXX_SCREEN_DUMP");
+    if (!kDumpDir.isEmpty()) {
+        QFile dump(QStringLiteral("%1/%2-%3.raw")
+                        .arg(kDumpDir,
+                                m_screenInfo.identifier,
+                                QString::number(QDateTime::currentMSecsSinceEpoch())));
+        if (dump.open(QIODevice::WriteOnly)) {
+            dump.write(reinterpret_cast<const char*>(fboImage.constBits()),
+                    fboImage.sizeInBytes());
+        }
+    }
 
     emit frameRendered(m_screenInfo, fboImage.copy(), timestamp);
 }
