@@ -401,6 +401,9 @@ int BulkController::open(const QString& resourcePath) {
             qCWarning(m_logBase) << "Cannot claim interface for" << getName()
                                  << ":" << libusb_error_name(error);
             libusb_close(m_pHandle);
+            // open() reuses a non-null handle, so a stale one would crash the
+            // next attempt (e.g. toggling the controller off and on again).
+            m_pHandle = nullptr;
             return -1;
         } else {
             qCDebug(m_logBase) << "Claimed interface for" << getName();
