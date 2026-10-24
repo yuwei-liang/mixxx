@@ -313,6 +313,16 @@ std::chrono::microseconds QmlWaveformDisplay::fromTimerToNextSync(const Performa
     if (m_pTrack) {
         return m_syncInterval;
     }
+    // m_timer restarts on every frameSwapped. Offscreen windows (controller
+    // screens, rendered through QQuickRenderControl) never swap, so it goes
+    // stale and the estimate lands far outside the audio buffer: the position
+    // gets clamped one frame and not the next, and the waveform jumps back and
+    // forth. Such a frame goes out as soon as it is rendered, so measure from
+    // now instead.
+    const auto sinceSwap = std::chrono::microseconds(m_timer.elapsed().toIntegerMicros());
+    if (sinceSwap > 2 * m_syncInterval) {
+        return std::chrono::microseconds(timer.elapsed().toIntegerMicros());
+    }
     return m_syncInterval + std::chrono::microseconds(m_timer.difference(timer).toIntegerMicros());
 }
 
