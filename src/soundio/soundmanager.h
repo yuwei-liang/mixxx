@@ -54,6 +54,9 @@ class SoundManager : public QObject {
 
     // Playermanager will notify us when the number of decks changes.
     void setConfiguredDeckCount(int count);
+
+    /// TEMP(dj-library): test hook for the device watchdog
+    void testStopOutputCallbacks();
     int getConfiguredDeckCount() const;
 
     SoundDevicePointer getErrorDevice() const;

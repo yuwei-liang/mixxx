@@ -27,6 +27,11 @@ class SoundDevicePortAudio : public SoundDevice {
     SoundDeviceStatus open(bool isClkRefDevice, int syncBuffers) override;
     bool isOpen() const override;
     SoundDeviceStatus close() override;
+    /// TEMP(dj-library): test hook, stops the stream's callbacks the way a
+    /// vanished device does, without telling SoundManager
+    void testStopCallbacks() {
+        m_callbackResult.store(paAbort, std::memory_order_release);
+    }
     void readProcess(SINT framesPerBuffer) override;
     void writeProcess(SINT framesPerBuffer) override;
     QString getError() const override;

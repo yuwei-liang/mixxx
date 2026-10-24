@@ -562,6 +562,15 @@ void SoundManager::checkConfig() {
     // latency checks itself for validity on SMConfig::setLatency()
 }
 
+void SoundManager::testStopOutputCallbacks() {
+    for (const auto& pDevice : m_pEnumerator->queryDevices()) {
+        if (auto* pPortAudio = dynamic_cast<SoundDevicePortAudio*>(pDevice.data());
+                pPortAudio && pPortAudio->isOpen()) {
+            pPortAudio->testStopCallbacks();
+        }
+    }
+}
+
 void SoundManager::slotWatchDevices() {
     if (!m_lostDeviceNames.isEmpty()) {
         if (--m_checksUntilReopen <= 0) {

@@ -632,6 +632,7 @@ void CoreServices::initialize(QApplication* pApp) {
     //   load <group> <file>            loads a file into a deck
     //   analyze <id> [<id> ...]        queues library tracks for analysis
     //   lose <name>                    reports the controller's device as gone
+    //   audiostop                      stops the sound devices' callbacks
     if (const QString commandFile = qEnvironmentVariable("MIXXX_TEST_COMMANDS");
             !commandFile.isEmpty()) {
         auto* pTimer = new QTimer(this);
@@ -662,6 +663,11 @@ void CoreServices::initialize(QApplication* pApp) {
                         emit m_pLibrary->analyzeTracks(tracks);
                     }
                     qInfo() << "TESTCMD analyze" << tracks.size() << "tracks";
+                    continue;
+                }
+                if (line == QStringLiteral("audiostop")) {
+                    m_pSoundManager->testStopOutputCallbacks();
+                    qInfo() << "TESTCMD audiostop";
                     continue;
                 }
                 if (line.startsWith(QStringLiteral("lose "))) {
