@@ -32,6 +32,12 @@
 #include "mixer/playermanager.h"
 #include "controllers/scripting/legacy/controllerscriptinterfacelegacy.h"
 #include <QFile>
+#include "track/cue.h"
+#include "track/beats.h"
+#include "track/track.h"
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QDir>
 #include "analyzer/analyzerscheduledtrack.h"
 #include "control/controlproxy.h"
 #include <QJsonDocument>
@@ -493,6 +499,96 @@ void CoreServices::initialize(QApplication* pApp) {
     }
 
     ScopedTimer t(QStringLiteral("CoreServices::initialize"));
+
+    // External analysis results (see WTrackMenu::slotAnalyzeExternally). With
+    // MIXXX_EXTERNAL_INBOX=<dir>, every <name>.json dropped there is applied to
+    // the track it names, then removed:
+    //   {"id": <track id>, "bpm": 128.0, "firstBeat": <seconds>,
+    //    "replaceLabels": ["Drop", ...],   // existing hotcues with these labels go
+    //    "cues": [{"hotcue": 3, "start": <s>, "length": <s, 0 = plain cue>,
+    //              "label": "Drop", "color": "#FF4500"}, ...]}
+    // The beat grid replaces the track's own and is locked; a cue whose pad is
+    // still taken (by a cue not listed in replaceLabels) is skipped. Working on
+    // the Track object, not the database, means a loaded deck updates at once
+    // and Mixxx saves it like any other edit.
+    if (const QString inbox = qEnvironmentVariable("MIXXX_EXTERNAL_INBOX"); !inbox.isEmpty()) {
+        QDir().mkpath(inbox);
+        auto* pTimer = new QTimer(this);
+        connect(pTimer, &QTimer::timeout, this, [this, inbox]() {
+            const QDir dir(inbox);
+            const QStringList names = dir.entryList({QStringLiteral("*.json")}, QDir::Files);
+            for (const QString& name : names) {
+                QFile file(dir.filePath(name));
+                if (!file.open(QIODevice::ReadOnly)) {
+                    continue;
+                }
+                const QJsonObject result = QJsonDocument::fromJson(file.readAll()).object();
+                file.close();
+                file.remove();
+                const TrackId trackId(QVariant(result.value(QStringLiteral("id")).toInt()));
+                TrackPointer pTrack = m_pTrackCollectionManager
+                        ? m_pTrackCollectionManager->getTrackById(trackId)
+                        : TrackPointer();
+                if (!pTrack || !pTrack->getSampleRate().isValid()) {
+                    qWarning() << "External analysis: no usable track" << trackId;
+                    continue;
+                }
+                const double sampleRate = pTrack->getSampleRate().value();
+                const double bpm = result.value(QStringLiteral("bpm")).toDouble();
+                if (bpm > 0) {
+                    const auto pBeats = mixxx::Beats::fromConstTempo(pTrack->getSampleRate(),
+                            mixxx::audio::FramePos(
+                                    result.value(QStringLiteral("firstBeat")).toDouble() *
+                                    sampleRate),
+                            mixxx::Bpm(bpm));
+                    pTrack->setBpmLocked(false);
+                    pTrack->trySetBeats(pBeats);
+                    pTrack->setBpmLocked(true);
+                }
+                QStringList replace;
+                for (const auto& label : result.value(QStringLiteral("replaceLabels")).toArray()) {
+                    replace.append(label.toString());
+                }
+                QSet<int> taken;
+                const QList<CuePointer> existing = pTrack->getCuePoints();
+                for (const CuePointer& pCue : existing) {
+                    if (pCue->getHotCue() < 0) {
+                        continue;
+                    }
+                    if (replace.contains(pCue->getLabel())) {
+                        pTrack->removeCue(pCue);
+                    } else {
+                        taken.insert(pCue->getHotCue());
+                    }
+                }
+                int added = 0;
+                for (const auto& value : result.value(QStringLiteral("cues")).toArray()) {
+                    const QJsonObject cue = value.toObject();
+                    const int hotcue = cue.value(QStringLiteral("hotcue")).toInt(-1);
+                    if (hotcue < 0 || taken.contains(hotcue)) {
+                        continue;
+                    }
+                    const double start = cue.value(QStringLiteral("start")).toDouble();
+                    const double length = cue.value(QStringLiteral("length")).toDouble();
+                    const QColor color(cue.value(QStringLiteral("color")).toString());
+                    CuePointer pCue = pTrack->createAndAddCue(
+                            length > 0 ? mixxx::CueType::Loop : mixxx::CueType::HotCue,
+                            hotcue,
+                            mixxx::audio::FramePos(start * sampleRate),
+                            length > 0 ? mixxx::audio::FramePos((start + length) * sampleRate)
+                                       : mixxx::audio::FramePos(),
+                            color.isValid() ? mixxx::RgbColor(color.rgb() & 0xFFFFFF)
+                                            : mixxx::PredefinedColorPalettes::kDefaultCueColor);
+                    pCue->setLabel(cue.value(QStringLiteral("label")).toString());
+                    taken.insert(hotcue);
+                    ++added;
+                }
+                qInfo() << "External analysis: applied to" << pTrack->getLocation()
+                        << "bpm" << bpm << "cues" << added;
+            }
+        });
+        pTimer->start(1000);
+    }
 
     // TEMP(dj-library): test harness. With MIXXX_TEST_COMMANDS=<file>, lines
     // appended to that file are run every 50 ms and the file is emptied:

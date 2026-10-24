@@ -162,6 +162,7 @@ class WTrackMenu : public QMenu {
     void slotReanalyze();
     void slotReanalyzeWithFixedTempo();
     void slotReanalyzeWithVariableTempo();
+    void slotAnalyzeExternally();
 
     // BPM
     void slotLockBpm();
@@ -361,6 +362,8 @@ class WTrackMenu : public QMenu {
     parented_ptr<QAction> m_pReanalyzeAction;
     parented_ptr<QAction> m_pReanalyzeConstBpmAction;
     parented_ptr<QAction> m_pReanalyzeVarBpmAction;
+    // only when MIXXX_EXTERNAL_ANALYZER names a command, see slotAnalyzeExternally()
+    parented_ptr<QAction> m_pAnalyzeExternallyAction;
 
     // Clear track metadata actions
     parented_ptr<QAction> m_pClearBeatsAction;

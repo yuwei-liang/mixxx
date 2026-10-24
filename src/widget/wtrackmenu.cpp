@@ -1,6 +1,12 @@
 #include "widget/wtrackmenu.h"
 
 #include <QCheckBox>
+#include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
+#include <QTemporaryFile>
 #include <QDialogButtonBox>
 #include <QInputDialog>
 #include <QList>
@@ -592,6 +598,18 @@ void WTrackMenu::createActions() {
                 &QAction::triggered,
                 this,
                 &WTrackMenu::slotReanalyzeWithVariableTempo);
+
+        const QString externalAnalyzer = qEnvironmentVariable("MIXXX_EXTERNAL_ANALYZER");
+        if (!externalAnalyzer.isEmpty()) {
+            m_pAnalyzeExternallyAction = make_parented<QAction>(
+                    qEnvironmentVariable("MIXXX_EXTERNAL_ANALYZER_LABEL",
+                            tr("Analyze externally")),
+                    this);
+            connect(m_pAnalyzeExternallyAction,
+                    &QAction::triggered,
+                    this,
+                    &WTrackMenu::slotAnalyzeExternally);
+        }
     }
 
     // This action is only usable when m_deckGroup is set. That is true only
@@ -767,6 +785,10 @@ void WTrackMenu::setupActions() {
         m_pAnalyzeMenu->addAction(m_pReanalyzeAction);
         m_pAnalyzeMenu->addAction(m_pReanalyzeConstBpmAction);
         m_pAnalyzeMenu->addAction(m_pReanalyzeVarBpmAction);
+        if (m_pAnalyzeExternallyAction) {
+            m_pAnalyzeMenu->addSeparator();
+            m_pAnalyzeMenu->addAction(m_pAnalyzeExternallyAction);
+        }
         addMenu(m_pAnalyzeMenu);
     }
 
@@ -1822,6 +1844,43 @@ void WTrackMenu::slotReanalyzeWithVariableTempo() {
     AnalyzerTrack::Options options;
     options.useFixedTempo = false;
     addToAnalysis(options);
+}
+
+// Hand the selected tracks to an external analyzer: the command named by
+// MIXXX_EXTERNAL_ANALYZER is started detached with one argument, a JSON file
+// listing {id, location, samplerate} per track. It reports back through the
+// external analysis inbox (see CoreServices), so Mixxx does not wait for it.
+void WTrackMenu::slotAnalyzeExternally() {
+    const QString command = qEnvironmentVariable("MIXXX_EXTERNAL_ANALYZER");
+    if (command.isEmpty()) {
+        return;
+    }
+    QJsonArray tracks;
+    const TrackPointerList pTracks = getTrackPointers();
+    for (const auto& pTrack : pTracks) {
+        QJsonObject track;
+        track.insert(QStringLiteral("id"), pTrack->getId().toVariant().toInt());
+        track.insert(QStringLiteral("location"), pTrack->getLocation());
+        track.insert(QStringLiteral("samplerate"),
+                static_cast<int>(pTrack->getSampleRate().value()));
+        tracks.append(track);
+    }
+    if (tracks.isEmpty()) {
+        return;
+    }
+    QTemporaryFile request(QDir::tempPath() + QStringLiteral("/mixxx-analyze-XXXXXX.json"));
+    request.setAutoRemove(false);
+    if (!request.open()) {
+        qWarning() << "External analysis: cannot write the request file";
+        return;
+    }
+    request.write(QJsonDocument(QJsonObject{{QStringLiteral("tracks"), tracks}}).toJson());
+    request.close();
+    if (!QProcess::startDetached(command, {request.fileName()})) {
+        qWarning() << "External analysis: cannot start" << command;
+        return;
+    }
+    qInfo() << "External analysis: sent" << tracks.size() << "tracks to" << command;
 }
 
 void WTrackMenu::slotLockBpm() {
