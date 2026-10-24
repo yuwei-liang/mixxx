@@ -111,5 +111,10 @@ class ControllerManager : public QObject {
     /// come back, and whether it was present at the previous check. Accessed
     /// only from the ControllerManager thread.
     QHash<Controller*, bool> m_lostControllers;
+    /// Set while controllers are being closed or reopened after a loss.
+    /// Closing a controller can run a nested event loop (the screen renderers
+    /// stop), which would otherwise deliver another deviceLost or a reconnect
+    /// tick in the middle of it.
+    bool m_changingLostControllers{false};
     QSet<Controller*> m_watchedControllers;
 };

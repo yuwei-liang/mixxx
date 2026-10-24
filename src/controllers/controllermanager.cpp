@@ -442,7 +442,11 @@ void ControllerManager::watchForDeviceLoss(Controller* pController) {
 
 void ControllerManager::controllerLost(Controller* pController) {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
-    if (!pController->isOpen()) {
+    if (m_changingLostControllers) {
+        QTimer::singleShot(100, this, [this, pController]() { controllerLost(pController); });
+        return;
+    }
+    if (!pController->isOpen() || m_lostControllers.contains(pController)) {
         return;
     }
     // One physical device can be several controllers (the Kontrol S5 is a HID
@@ -452,6 +456,7 @@ void ControllerManager::controllerLost(Controller* pController) {
     auto locker = lockMutex(&m_mutex);
     const QList<Controller*> controllers = m_controllers;
     locker.unlock();
+    QList<Controller*> lost;
     for (Controller* pOther : controllers) {
         if (pOther != pController &&
                 (!pOther->isOpen() || !pOther->getVendorId() ||
@@ -459,11 +464,18 @@ void ControllerManager::controllerLost(Controller* pController) {
                         pOther->getProductId() != pController->getProductId())) {
             continue;
         }
-        qWarning() << "Controller" << pOther->getName()
-                   << "lost its device; it will be reopened when the device is back";
-        pOther->close();
+        lost.append(pOther);
         m_lostControllers.insert(pOther, false);
     }
+    m_changingLostControllers = true;
+    for (Controller* pOther : std::as_const(lost)) {
+        qWarning() << "Controller" << pOther->getName()
+                   << "lost its device; it will be reopened when the device is back";
+        if (pOther->isOpen()) {
+            pOther->close();
+        }
+    }
+    m_changingLostControllers = false;
     pollIfAnyControllersOpen();
     if (!m_reconnectTimer.isActive()) {
         m_reconnectTimer.start();
@@ -472,6 +484,10 @@ void ControllerManager::controllerLost(Controller* pController) {
 
 void ControllerManager::slotReconnectLostControllers() {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
+    if (m_changingLostControllers) {
+        return;
+    }
+    m_changingLostControllers = true;
     // A device is only opened once it has been present for one full interval,
     // so it has time to finish coming up (a controller that is also a sound
     // card brings up its interfaces one after the other).
@@ -491,6 +507,7 @@ void ControllerManager::slotReconnectLostControllers() {
             ++it;
         }
     }
+    m_changingLostControllers = false;
     pollIfAnyControllersOpen();
     if (m_lostControllers.isEmpty()) {
         m_reconnectTimer.stop();

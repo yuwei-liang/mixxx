@@ -12,6 +12,7 @@
 #include "broadcast/broadcastmanager.h"
 #endif
 #include "control/controlindicatortimer.h"
+#include "controllers/controller.h"
 #include "controllers/controllermanager.h"
 #include "controllers/keyboard/keyboardeventfilter.h"
 #include "controllers/scripting/controllerscriptenginebase.h"
@@ -630,6 +631,7 @@ void CoreServices::initialize(QApplication* pApp) {
     //   shared <json>                  replaces controller shared data
     //   load <group> <file>            loads a file into a deck
     //   analyze <id> [<id> ...]        queues library tracks for analysis
+    //   lose <name>                    reports the controller's device as gone
     if (const QString commandFile = qEnvironmentVariable("MIXXX_TEST_COMMANDS");
             !commandFile.isEmpty()) {
         auto* pTimer = new QTimer(this);
@@ -660,6 +662,16 @@ void CoreServices::initialize(QApplication* pApp) {
                         emit m_pLibrary->analyzeTracks(tracks);
                     }
                     qInfo() << "TESTCMD analyze" << tracks.size() << "tracks";
+                    continue;
+                }
+                if (line.startsWith(QStringLiteral("lose "))) {
+                    const QString name = line.mid(5);
+                    for (Controller* pController : m_pControllerManager->getControllers()) {
+                        if (pController->getName().contains(name)) {
+                            emit pController->deviceLost();
+                            qInfo() << "TESTCMD lose" << pController->getName();
+                        }
+                    }
                     continue;
                 }
                 if (line.startsWith(QStringLiteral("load "))) {
