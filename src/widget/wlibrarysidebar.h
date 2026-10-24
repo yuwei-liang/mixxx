@@ -25,6 +25,9 @@ class WLibrarySidebar : public QTreeView, public WBaseWidget {
     void focusInEvent(QFocusEvent* pEvent) override;
     void timerEvent(QTimerEvent* pEvent) override;
     void toggleSelectedItem();
+    /// Open the selected folder and select its first entry, activating it as
+    /// moving there with the arrow keys does.
+    void enterSelectedItem();
     void renameSelectedItem();
     bool isLeafNodeSelected();
     bool isChildIndexSelected(const QModelIndex& index);

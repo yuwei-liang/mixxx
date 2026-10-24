@@ -225,6 +225,23 @@ void WLibrarySidebar::toggleSelectedItem() {
     }
 }
 
+void WLibrarySidebar::enterSelectedItem() {
+    const QModelIndex index = selectedIndex();
+    if (!index.isValid()) {
+        return;
+    }
+    // activate it first: features fill their children lazily on activation
+    emit clicked(index);
+    expand(index);
+    const QModelIndex child = model()->index(0, 0, index);
+    if (!child.isValid()) {
+        return;
+    }
+    setCurrentIndex(child);
+    scrollTo(child);
+    emit pressed(child);
+}
+
 bool WLibrarySidebar::isLeafNodeSelected() {
     QModelIndex index = selectedIndex();
     if (index.isValid()) {

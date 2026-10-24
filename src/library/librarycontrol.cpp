@@ -282,6 +282,10 @@ LibraryControl::LibraryControl(Library* pLibrary)
 
     // Control to "goto" the currently selected item in focused widget (context dependent)
     m_pGoToItem = std::make_unique<ControlPushButton>(ConfigKey("[Library]", "GoToItem"));
+    // Like GoToItem, but a sidebar folder is entered rather than expanded or
+    // collapsed: for controllers that browse the sidebar as a tree on their
+    // own screen, where push goes in and back comes out.
+    m_pEnterItem = std::make_unique<ControlPushButton>(ConfigKey("[Library]", "EnterItem"));
 #ifdef MIXXX_USE_QML
     if (!CmdlineArgs::Instance().isQml())
 #endif
@@ -290,6 +294,10 @@ LibraryControl::LibraryControl(Library* pLibrary)
                 &ControlPushButton::valueChanged,
                 this,
                 &LibraryControl::slotGoToItem);
+        connect(m_pEnterItem.get(),
+                &ControlPushButton::valueChanged,
+                this,
+                &LibraryControl::slotEnterItem);
     }
 
     // Auto DJ controls
@@ -1122,6 +1130,15 @@ void LibraryControl::slotEditItem(double v) {
         break;
     }
     }
+}
+
+void LibraryControl::slotEnterItem(double v) {
+    if (v > 0 && m_focusedWidget == FocusWidget::Sidebar && m_pSidebarWidget &&
+            !m_pSidebarWidget->isLeafNodeSelected()) {
+        m_pSidebarWidget->enterSelectedItem();
+        return;
+    }
+    slotGoToItem(v);
 }
 
 void LibraryControl::slotGoToItem(double v) {

@@ -115,6 +115,7 @@ class LibraryControl : public QObject {
     void slotMoveTrack(double);
     void slotEditItem(double);
     void slotGoToItem(double v);
+    void slotEnterItem(double v);
 
     void slotToggleBpmLock(double v);
 
@@ -196,6 +197,7 @@ class LibraryControl : public QObject {
 
     // Control to choose the currently selected item in focused widget (double click)
     std::unique_ptr<ControlObject> m_pGoToItem;
+    std::unique_ptr<ControlObject> m_pEnterItem;
 
     // Add to Auto-Dj Queue
     std::unique_ptr<ControlObject> m_pAutoDjAddTop;
