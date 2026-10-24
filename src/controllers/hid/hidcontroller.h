@@ -103,6 +103,7 @@ class HidController final : public Controller {
   private:
     int open(const QString& resourcePath) override;
     int close() override;
+    bool isDevicePresent() const override;
 
     // For devices which only support a single report, reportID must be set to
     // 0x0.

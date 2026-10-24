@@ -95,6 +95,10 @@ SoundManager::SoundManager(
 
     checkConfig();
 
+    m_deviceWatchdog.setInterval(500);
+    connect(&m_deviceWatchdog, &QTimer::timeout, this, &SoundManager::slotWatchDevices);
+    m_deviceWatchdog.start();
+
     // Don't write config to disk, yet -- it may be reset to defaults in case
     // previously configured devices were not found.
     // Write new config after MixxxMainWindow::noOutputDlg where the user has
@@ -528,6 +532,8 @@ void SoundManager::closeActiveConfig(bool async) {
 
 SoundDeviceStatus SoundManager::setConfig(const SoundManagerConfig& config) {
     SoundDeviceStatus status = SoundDeviceStatus::Ok;
+    // The user chose devices: stop waiting for the lost ones
+    m_lostDeviceNames.clear();
     m_config = config;
     checkConfig();
 
@@ -556,7 +562,84 @@ void SoundManager::checkConfig() {
     // latency checks itself for validity on SMConfig::setLatency()
 }
 
+void SoundManager::slotWatchDevices() {
+    if (!m_lostDeviceNames.isEmpty()) {
+        if (--m_checksUntilReopen <= 0) {
+            m_checksUntilReopen = 4;
+            reopenLostDevices();
+        }
+        return;
+    }
+    const quint64 callbacks = m_outputCallbacks.load(std::memory_order_relaxed);
+    if (m_pControlObjectSoundStatusCO->get() != SOUNDMANAGER_CONNECTED ||
+            callbacks != m_lastOutputCallbacks) {
+        m_lastOutputCallbacks = callbacks;
+        m_stalledChecks = 0;
+        return;
+    }
+    // No output callback for 1.5 s while connected: the device is gone
+    // (CoreAudio stops calling back without reporting an error).
+    if (++m_stalledChecks < 3) {
+        return;
+    }
+    m_stalledChecks = 0;
+    QStringList names;
+    for (const auto& deviceId : m_config.getDevices()) {
+        if (deviceId.name != kNetworkDeviceInternalName && !names.contains(deviceId.name)) {
+            names.append(deviceId.name);
+        }
+    }
+    if (names.isEmpty()) {
+        return;
+    }
+    qWarning() << "Sound output stopped; waiting for" << names << "to come back";
+    const bool sleepAfterClosing = false;
+    closeDevices(sleepAfterClosing);
+    m_lostDeviceNames = names;
+    m_checksUntilReopen = 4;
+}
+
+void SoundManager::reopenLostDevices() {
+    if (isPipewireSelected()) {
+        return;
+    }
+    // PortAudio only lists devices again after it is restarted.
+    const bool sleepAfterClosing = false;
+    closeDevices(sleepAfterClosing);
+    m_pErrorDevice.clear();
+    m_pEnumerator->deinitialize();
+    queryDevices();
+    QStringList present;
+    for (const auto& pDevice : m_pEnumerator->queryDevices()) {
+        present.append(pDevice->getDeviceId().name);
+    }
+    for (const auto& name : std::as_const(m_lostDeviceNames)) {
+        if (!present.contains(name)) {
+            return;
+        }
+    }
+    // Device indexes change when a device comes back, so match the saved
+    // configuration to the new list by name, as at startup.
+    SoundManagerConfig config(this);
+    if (config.readFromDisk() && config.validateDevices()) {
+        m_config = config;
+        checkConfig();
+    } else {
+        qWarning() << "Could not match the saved sound configuration to"
+                   << m_lostDeviceNames << "; reopening as they were";
+    }
+    const SoundDeviceStatus status = setupDevices();
+    if (status == SoundDeviceStatus::Ok) {
+        qInfo() << "Sound devices are back:" << m_lostDeviceNames;
+        m_lostDeviceNames.clear();
+    } else {
+        qWarning() << "Reopening sound devices failed:" << getLastErrorMessage(status);
+        closeDevices(sleepAfterClosing);
+    }
+}
+
 void SoundManager::onDeviceOutputCallback(const SINT iFramesPerBuffer) {
+    m_outputCallbacks.fetch_add(1, std::memory_order_relaxed);
     // Produce a block of samples for output. EngineMixer expects stereo
     // samples so multiply iFramesPerBuffer by 2.
     m_pEngineMixer->process(iFramesPerBuffer * 2);

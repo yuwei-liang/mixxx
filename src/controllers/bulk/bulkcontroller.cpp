@@ -491,6 +491,28 @@ int BulkController::close() {
     return 0;
 }
 
+bool BulkController::isDevicePresent() const {
+#ifdef Q_OS_ANDROID
+    return false;
+#else
+    if (!m_pContext) {
+        return false;
+    }
+    libusb_device** ppList;
+    const ssize_t count = libusb_get_device_list(m_pContext, &ppList);
+    bool present = false;
+    for (ssize_t i = 0; i < count && !present; i++) {
+        libusb_device_descriptor desc;
+        present = libusb_get_device_descriptor(ppList[i], &desc) == 0 &&
+                desc.idVendor == m_vendorId && desc.idProduct == m_productId;
+    }
+    if (count >= 0) {
+        libusb_free_device_list(ppList, 1);
+    }
+    return present;
+#endif
+}
+
 void BulkController::send(const QList<int>& data, unsigned int length) {
     Q_UNUSED(length);
     QByteArray temp;
@@ -524,6 +546,9 @@ bool BulkController::sendBytes(const QByteArray& data) {
     if (ret < 0) {
         qCWarning(m_logOutput) << "Unable to send data to" << getName()
                                << "serial #" << m_sUID << "-" << libusb_error_name(ret);
+        if (ret == LIBUSB_ERROR_NO_DEVICE || ret == LIBUSB_ERROR_IO) {
+            reportDeviceLost();
+        }
         return false;
     } else if (CmdlineArgs::Instance().getControllerDebug()) {
         qCDebug(m_logOutput) << transferred << "bytes sent to" << getName()

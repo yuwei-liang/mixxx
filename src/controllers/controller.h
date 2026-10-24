@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QElapsedTimer>
+#include <atomic>
 
 #include "controllers/controllermappinginfo.h"
 #include "controllers/legacycontrollermapping.h"
@@ -102,6 +103,12 @@ class Controller : public QObject {
     /// Emitted when the controller has stopped its engine.
     void engineStopped();
 
+    /// Emitted (from any thread, at most once per open()) when I/O shows that
+    /// the device has gone away, e.g. it was switched off or unplugged.
+    /// ControllerManager closes the controller and reopens it once the device
+    /// is back.
+    void deviceLost();
+
     // Making these slots protected/private ensures that other parts of Mixxx can
     // only signal them which allows us to use no locks.
   protected slots:
@@ -153,6 +160,10 @@ class Controller : public QObject {
     // To be called when receiving events
     void triggerActivity();
 
+    /// To be called by sub-classes, from any thread, when I/O fails because
+    /// the device is gone. Emits deviceLost() once until the next open.
+    void reportDeviceLost();
+
     inline void setOutputDevice(bool outputDevice) {
         m_bIsOutputDevice = outputDevice;
     }
@@ -160,6 +171,9 @@ class Controller : public QObject {
         m_bIsInputDevice = inputDevice;
     }
     inline void setOpen(bool open) {
+        if (open) {
+            m_deviceLostReported.store(false);
+        }
         m_bIsOpen = open;
         emit openChanged(m_bIsOpen);
     }
@@ -189,6 +203,12 @@ class Controller : public QObject {
         return false;
     }
 
+    /// Whether the physical device is attached right now. Used while a lost
+    /// controller waits to be reopened; must be cheap and must not open it.
+    virtual bool isDevicePresent() const {
+        return false;
+    }
+
   private:
     /// Controllers have multiple ownership over an engine.
     /// A ControllerScriptEngine must not own a controller.
@@ -204,6 +224,7 @@ class Controller : public QObject {
     // Indicates whether or not the device has been opened for input/output.
     bool m_bIsOpen;
     bool m_bLearning;
+    std::atomic<bool> m_deviceLostReported{false};
     QElapsedTimer m_userActivityInhibitTimer;
 
     friend class ControllerJSProxy;

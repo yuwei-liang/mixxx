@@ -5,6 +5,9 @@
 #include <QObject>
 #include <QSharedPointer>
 #include <QString>
+#include <QStringList>
+#include <QTimer>
+#include <atomic>
 #include <memory>
 
 #include "audio/types.h"
@@ -169,6 +172,10 @@ class SoundManager : public QObject {
 
   private slots:
     void completeDevicesClosing();
+    /// Notices when sound output stops because its device went away (e.g. a
+    /// controller that is also the sound card was switched off), and reopens
+    /// the configured devices once they are back.
+    void slotWatchDevices();
 
   public slots:
     void addDevice(SoundDevicePointer pDevice);
@@ -211,4 +218,16 @@ class SoundManager : public QObject {
     QSharedPointer<EngineNetworkStream> m_pNetworkStream;
     QSharedPointer<SoundDeviceNetwork> m_pNetworkDevice;
     bool m_pipewireEnabled;
+
+    void reopenLostDevices();
+
+    /// Counts output callbacks of the clock reference device
+    std::atomic<quint64> m_outputCallbacks{0};
+    QTimer m_deviceWatchdog;
+    quint64 m_lastOutputCallbacks{0};
+    int m_stalledChecks{0};
+    /// Names of the devices that were open when output stopped; empty unless
+    /// waiting for them to come back
+    QStringList m_lostDeviceNames;
+    int m_checksUntilReopen{0};
 };

@@ -142,6 +142,14 @@ void Controller::triggerActivity() {
     }
 }
 
+void Controller::reportDeviceLost() {
+    if (m_deviceLostReported.exchange(true)) {
+        return;
+    }
+    qCWarning(m_logBase) << "Device" << m_sDeviceName << "is gone";
+    emit deviceLost();
+}
+
 void Controller::receive(const QByteArray& data, mixxx::Duration timestamp) {
     if (!m_pScriptEngineLegacy) {
         //qWarning() << "Controller::receive called with no active engine!";

@@ -63,6 +63,8 @@ class HidIoThread : public QThread {
     /// Signals that a HID InputReport received by Interrupt triggered from HID device
     void receive(const QByteArray& data, mixxx::Duration timestamp);
     void reportReceived(quint8 reportId, const QByteArray& data);
+    /// hid_read() failed: on macOS and Linux this means the device is gone
+    void deviceLost();
 
   private:
     bool sendNextCachedOutputReport();

@@ -69,6 +69,8 @@ class ControllerManager : public QObject {
     void slotShutdown();
     /// Calls poll() on all devices that have isPolling() true.
     void slotPollDevices();
+    /// Reopens lost controllers whose device is back.
+    void slotReconnectLostControllers();
 
   private:
     void updateControllerList();
@@ -77,12 +79,17 @@ class ControllerManager : public QObject {
     void pollIfAnyControllersOpen();
     void openController(Controller* pController);
     void closeController(Controller* pController);
+    void watchForDeviceLoss(Controller* pController);
+    void controllerLost(Controller* pController);
 
     UserSettingsPointer m_pConfig;
     // WARNING: Do not parent m_pControllerLearningEventFilter to ControllerManager
     // because the CM is moved to its own thread and runs its own event loop.
     std::unique_ptr<ControllerLearningEventFilter> m_pControllerLearningEventFilter;
     QTimer m_pollTimer;
+    /// Runs while any controller is lost (its device switched off or
+    /// unplugged while open), until all of them are open again.
+    QTimer m_reconnectTimer;
     mutable QMutex m_mutex;
     /// Guarded by m_mutex for main-thread reads.
     /// Written/iterated only on the ControllerManager thread
@@ -100,4 +107,9 @@ class ControllerManager : public QObject {
     QSharedPointer<MappingInfoEnumerator> m_pMainThreadSystemMappingEnumerator;
     /// Accessed only from the ControllerManager thread via slotPollDevices().
     bool m_skipPoll;
+    /// Controllers closed because their device went away, waiting for it to
+    /// come back, and whether it was present at the previous check. Accessed
+    /// only from the ControllerManager thread.
+    QHash<Controller*, bool> m_lostControllers;
+    QSet<Controller*> m_watchedControllers;
 };

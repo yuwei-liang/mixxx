@@ -287,6 +287,11 @@ int HidController::open(const QString& resourcePath) {
             this,
             &HidController::receive,
             Qt::QueuedConnection);
+    connect(m_pHidIoThread.get(),
+            &HidIoThread::deviceLost,
+            this,
+            &HidController::reportDeviceLost,
+            Qt::QueuedConnection);
 
     // Controller input needs to be prioritized since it can affect the
     // audio directly, like when scratching
@@ -378,6 +383,28 @@ int HidController::close() {
     setOpen(false);
     qCInfo(m_logBase) << "Device closed";
     return 0;
+}
+
+bool HidController::isDevicePresent() const {
+#ifdef Q_OS_ANDROID
+    return false;
+#else
+    // The path changes when the device comes back (macOS gives it a new
+    // service id), so match what stays the same. open() falls back to
+    // vendor, product and serial number when the old path fails.
+    hid_device_info* pList = hid_enumerate(
+            m_deviceInfo.getVendorId(), m_deviceInfo.getProductId());
+    bool present = false;
+    for (const hid_device_info* pInfo = pList; pInfo && !present; pInfo = pInfo->next) {
+        const auto deviceInfo = mixxx::hid::DeviceInfo(*pInfo);
+        present = deviceInfo.getSerialNumber() == m_deviceInfo.getSerialNumber() &&
+                deviceInfo.getUsbInterfaceNumber() == m_deviceInfo.getUsbInterfaceNumber() &&
+                deviceInfo.getUsagePage() == m_deviceInfo.getUsagePage() &&
+                deviceInfo.getUsage() == m_deviceInfo.getUsage();
+    }
+    hid_free_enumeration(pList);
+    return present;
+#endif
 }
 
 /// This function is only for class compatibility with the (midi)controller

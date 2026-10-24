@@ -127,6 +127,7 @@ void HidIoThread::pollBufferedInputReports() {
                            "have disappeared.";
                 // Stop logging error messages if every hid_read() fails to avoid large log files
                 m_hidReadErrorLogged = true;
+                emit deviceLost();
             }
             break;
         } else {

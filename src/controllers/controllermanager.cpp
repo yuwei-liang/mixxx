@@ -1,5 +1,6 @@
 #include "controllers/controllermanager.h"
 
+#include <QHash>
 #include <QSet>
 #include <QThread>
 
@@ -99,6 +100,7 @@ ControllerManager::ControllerManager(UserSettingsPointer pConfig)
           m_pControllerLearningEventFilter(
                   std::make_unique<ControllerLearningEventFilter>()),
           m_pollTimer(this),
+          m_reconnectTimer(this),
           m_pThread(std::make_unique<QThread>()),
           m_skipPoll(false) {
     qRegisterMetaType<std::shared_ptr<LegacyControllerMapping>>(
@@ -113,6 +115,11 @@ ControllerManager::ControllerManager(UserSettingsPointer pConfig)
 
     m_pollTimer.setInterval(kPollInterval.toIntegerMillis());
     connect(&m_pollTimer, &QTimer::timeout, this, &ControllerManager::slotPollDevices);
+    m_reconnectTimer.setInterval(1000);
+    connect(&m_reconnectTimer,
+            &QTimer::timeout,
+            this,
+            &ControllerManager::slotReconnectLostControllers);
 
     m_pThread->setObjectName("ControllerManager");
 
@@ -189,6 +196,8 @@ void ControllerManager::slotInitialize() {
 void ControllerManager::slotShutdown() {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
     stopPolling();
+    m_reconnectTimer.stop();
+    m_lostControllers.clear();
 
     // Clear m_enumerators before deleting the enumerators to prevent other code
     // paths from accessing them during teardown.
@@ -278,6 +287,7 @@ void ControllerManager::slotSetUpDevices() {
 
     for (Controller* pController : deviceList) {
         QString name = pController->getName();
+        watchForDeviceLoss(pController);
 
         if (pController->isOpen()) {
             pController->close();
@@ -416,11 +426,83 @@ void ControllerManager::slotPollDevices() {
     //qDebug() << "ControllerManager::pollDevices()" << duration << start;
 }
 
+void ControllerManager::watchForDeviceLoss(Controller* pController) {
+    if (m_watchedControllers.contains(pController)) {
+        return;
+    }
+    m_watchedControllers.insert(pController);
+    // deviceLost may be emitted from an I/O thread; handle it on ours.
+    connect(
+            pController,
+            &Controller::deviceLost,
+            this,
+            [this, pController]() { controllerLost(pController); },
+            Qt::QueuedConnection);
+}
+
+void ControllerManager::controllerLost(Controller* pController) {
+    DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
+    if (!pController->isOpen()) {
+        return;
+    }
+    // One physical device can be several controllers (the Kontrol S5 is a HID
+    // controller for its buttons and a bulk controller for its screens), and
+    // only one of them may notice: the screens send nothing while nothing on
+    // them changes. Close every open controller of the same device.
+    auto locker = lockMutex(&m_mutex);
+    const QList<Controller*> controllers = m_controllers;
+    locker.unlock();
+    for (Controller* pOther : controllers) {
+        if (pOther != pController &&
+                (!pOther->isOpen() || !pOther->getVendorId() ||
+                        pOther->getVendorId() != pController->getVendorId() ||
+                        pOther->getProductId() != pController->getProductId())) {
+            continue;
+        }
+        qWarning() << "Controller" << pOther->getName()
+                   << "lost its device; it will be reopened when the device is back";
+        pOther->close();
+        m_lostControllers.insert(pOther, false);
+    }
+    pollIfAnyControllersOpen();
+    if (!m_reconnectTimer.isActive()) {
+        m_reconnectTimer.start();
+    }
+}
+
+void ControllerManager::slotReconnectLostControllers() {
+    DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
+    // A device is only opened once it has been present for one full interval,
+    // so it has time to finish coming up (a controller that is also a sound
+    // card brings up its interfaces one after the other).
+    for (auto it = m_lostControllers.begin(); it != m_lostControllers.end();) {
+        Controller* pController = it.key();
+        const bool present = pController->isDevicePresent();
+        if (!present || !it.value()) {
+            it.value() = present;
+            ++it;
+            continue;
+        }
+        qInfo() << "Device of controller" << pController->getName() << "is back, reopening";
+        if (pController->isOpen() ||
+                pController->open(m_pConfig->getResourcePath()) == 0) {
+            it = m_lostControllers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    pollIfAnyControllersOpen();
+    if (m_lostControllers.isEmpty()) {
+        m_reconnectTimer.stop();
+    }
+}
+
 void ControllerManager::openController(Controller* pController) {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
     if (!pController) {
         return;
     }
+    m_lostControllers.remove(pController);
     if (pController->isOpen()) {
         pController->close();
     }
@@ -441,6 +523,8 @@ void ControllerManager::closeController(Controller* pController) {
     if (!pController) {
         return;
     }
+    // Disabled in the preferences: no longer waiting for it to come back
+    m_lostControllers.remove(pController);
     pController->close();
     pollIfAnyControllersOpen();
     // Update configuration to reflect controller is disabled.
