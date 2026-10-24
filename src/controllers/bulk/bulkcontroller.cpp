@@ -1,5 +1,7 @@
 #include "controllers/bulk/bulkcontroller.h"
 
+#include <QThread>
+
 #include <libusb.h>
 
 #include <memory>
@@ -397,6 +399,13 @@ int BulkController::open(const QString& resourcePath) {
 
     if (m_interfaceNumber.has_value()) {
         int error = libusb_claim_interface(m_pHandle, *m_interfaceNumber);
+        // Another program may hold the interface for a moment (on macOS the
+        // Traktor S5's NIHardwareAgent is started when the device is opened
+        // and grabs its screen interface), so retry briefly before giving up.
+        for (int attempt = 0; error == LIBUSB_ERROR_ACCESS && attempt < 20; ++attempt) {
+            QThread::msleep(250);
+            error = libusb_claim_interface(m_pHandle, *m_interfaceNumber);
+        }
         if (error < 0) {
             qCWarning(m_logBase) << "Cannot claim interface for" << getName()
                                  << ":" << libusb_error_name(error);
