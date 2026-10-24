@@ -313,6 +313,13 @@ void ControllerRenderingEngine::renderFrame() {
         }
     }
 
+    // sync() resolves the render target, which needs the context current.
+    // Making it current only afterwards (as below) let the first sync() run
+    // without one: on macOS that crashed in QGles2TextureRenderTarget::create()
+    // at start-up, now and then ("QOpenGLExtensionMatcher: No context").
+    VERIFY_OR_TERMINATE(m_context->makeCurrent(m_offscreenSurface.get()),
+            "Couldn't make the GLContext current to the OffscreenSurface.");
+
     m_renderControl->polishItems();
 
     m_renderControl->beginFrame();
