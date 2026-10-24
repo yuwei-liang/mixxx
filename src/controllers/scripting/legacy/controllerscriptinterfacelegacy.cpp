@@ -1,5 +1,7 @@
 #include "controllerscriptinterfacelegacy.h"
 
+#include <QMutex>
+#include <QPointer>
 #include <QStringEncoder>
 #include <gsl/pointers>
 
@@ -28,6 +30,14 @@ constexpr double kAlphaBetaDt = kScratchTimerMs / 1000.0;
 constexpr double kBrakeRampToRate = 0.01;
 } // namespace
 
+namespace {
+// Shared data lives for the whole process. Every script interface registers
+// here so a change can be handed to each on the thread it runs in.
+QMutex s_sharedDataMutex;
+QVariant s_sharedData;
+QList<QPointer<ControllerScriptInterfaceLegacy>> s_sharedDataListeners;
+} // namespace
+
 ControllerScriptInterfaceLegacy::ControllerScriptInterfaceLegacy(
         ControllerScriptEngineLegacy* m_pEngine, const RuntimeLoggingCategory& logger)
         : m_pScriptEngineLegacy(m_pEngine),
@@ -52,9 +62,74 @@ ControllerScriptInterfaceLegacy::ControllerScriptInterfaceLegacy(
         m_spinbackActive[i] = false;
         m_softStartActive[i] = false;
     }
+    const QMutexLocker lock(&s_sharedDataMutex);
+    s_sharedDataListeners.append(QPointer(this));
+}
+
+QJSValue ControllerScriptInterfaceLegacy::getSharedData() {
+    auto pJsEngine = m_pScriptEngineLegacy->jsEngine();
+    if (!pJsEngine) {
+        return QJSValue();
+    }
+    const QMutexLocker lock(&s_sharedDataMutex);
+    return pJsEngine->toScriptValue(s_sharedData);
+}
+
+void ControllerScriptInterfaceLegacy::setSharedData(const QJSValue& value) {
+    publishSharedData(value.toVariant());
+}
+
+void ControllerScriptInterfaceLegacy::publishSharedData(const QVariant& data) {
+    QList<QPointer<ControllerScriptInterfaceLegacy>> listeners;
+    {
+        const QMutexLocker lock(&s_sharedDataMutex);
+        s_sharedData = data;
+        s_sharedDataListeners.removeAll(nullptr);
+        listeners = s_sharedDataListeners;
+    }
+    for (const auto& pListener : std::as_const(listeners)) {
+        if (!pListener) {
+            continue;
+        }
+        QMetaObject::invokeMethod(
+                pListener.data(),
+                [pListener, data]() {
+                    if (pListener) {
+                        pListener->deliverSharedData(data);
+                    }
+                },
+                Qt::QueuedConnection);
+    }
+}
+
+void ControllerScriptInterfaceLegacy::makeSharedDataConnection(const QJSValue& callback) {
+    if (!callback.isCallable()) {
+        qCWarning(m_logger) << "makeSharedDataConnection needs a function";
+        return;
+    }
+    m_sharedDataCallbacks.append(callback);
+}
+
+void ControllerScriptInterfaceLegacy::deliverSharedData(const QVariant& data) {
+    auto pJsEngine = m_pScriptEngineLegacy->jsEngine();
+    if (!pJsEngine || m_sharedDataCallbacks.isEmpty()) {
+        return;
+    }
+    const QJSValueList args{pJsEngine->toScriptValue(data)};
+    for (QJSValue callback : std::as_const(m_sharedDataCallbacks)) {
+        const QJSValue result = callback.call(args);
+        if (result.isError()) {
+            m_pScriptEngineLegacy->showScriptExceptionDialog(result);
+        }
+    }
 }
 
 ControllerScriptInterfaceLegacy::~ControllerScriptInterfaceLegacy() {
+    {
+        const QMutexLocker lock(&s_sharedDataMutex);
+        s_sharedDataListeners.removeAll(QPointer(this));
+        s_sharedDataListeners.removeAll(nullptr);
+    }
     // Stop all timers
     const auto timerIds = m_timers.keys();
     for (const int timerId : timerIds) {
