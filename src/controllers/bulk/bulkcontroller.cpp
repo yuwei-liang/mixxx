@@ -383,9 +383,16 @@ int BulkController::open(const QString& resourcePath) {
         qCWarning(m_logBase) << "Unable to open USB Bulk device" << getName();
         return -1;
     }
+#ifndef __APPLE__
+    // On macOS libusb implements kernel-driver detach by capturing the whole
+    // USB device, which also unloads the drivers of its other interfaces. For
+    // controllers that are their own audio interface (Traktor Kontrol S5) that
+    // takes the sound card away from CoreAudio. The screen interface is vendor
+    // specific and has no kernel driver there, so claiming it is enough.
     if (libusb_set_auto_detach_kernel_driver(m_pHandle, true) == LIBUSB_ERROR_NOT_SUPPORTED) {
         qCDebug(m_logBase) << "unable to automatically detach kernel driver for" << getName();
     }
+#endif
 #endif
 
     if (m_interfaceNumber.has_value()) {
