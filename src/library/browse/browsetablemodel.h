@@ -92,6 +92,9 @@ class BrowseTableModel final : public QStandardItemModel, public virtual TrackMo
     bool isColumnSortable(int column) const override;
     TrackModel::SortColumnId sortColumnIdFromColumnIndex(int index) const override;
     int columnIndexFromSortColumnId(TrackModel::SortColumnId sortColumn) const override;
+    // library field names (LIBRARYTABLE_*) -> columns, so controller screens
+    // can show the Computer view's rows like any other track list
+    int fieldIndex(const QString& fieldName) const override;
     QString modelKey(bool noSearch) const override;
 
     bool updateTrackGenre(

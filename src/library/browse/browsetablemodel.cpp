@@ -7,6 +7,7 @@
 
 #include "library/browse/browsetablemodel.h"
 #include "library/browse/browsethread.h"
+#include "library/dao/trackschema.h"
 #include "library/tabledelegates/previewbuttondelegate.h"
 #include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
@@ -192,6 +193,19 @@ int BrowseTableModel::columnIndexFromSortColumnId(TrackModel::SortColumnId colum
     }
 
     return m_columnIndexBySortColumnId[static_cast<int>(column)];
+}
+
+int BrowseTableModel::fieldIndex(const QString& fieldName) const {
+    static const QHash<QString, int> kColumns = {
+            {LIBRARYTABLE_ARTIST, COLUMN_ARTIST},
+            {LIBRARYTABLE_TITLE, COLUMN_TITLE},
+            {LIBRARYTABLE_ALBUM, COLUMN_ALBUM},
+            {LIBRARYTABLE_GENRE, COLUMN_GENRE},
+            {LIBRARYTABLE_DURATION, COLUMN_DURATION},
+            {LIBRARYTABLE_BPM, COLUMN_BPM},
+            {LIBRARYTABLE_KEY, COLUMN_KEY},
+    };
+    return kColumns.value(fieldName, -1);
 }
 
 TrackModel::SortColumnId BrowseTableModel::sortColumnIdFromColumnIndex(int index) const {
