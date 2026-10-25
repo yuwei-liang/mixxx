@@ -45,6 +45,8 @@ class ProxyTrackModel : public QSortFilterProxyModel, public TrackModel {
     bool setModelSetting(const QString& name, const QVariant& value) final;
     TrackModel::SortColumnId sortColumnIdFromColumnIndex(int index) const override;
     int columnIndexFromSortColumnId(TrackModel::SortColumnId sortColumn) const override;
+    // the proxy filters and sorts rows only, so columns are the source's
+    int fieldIndex(const QString& fieldName) const override;
     bool updateTrackGenre(
             Track* pTrack,
             const QString& genre) const override;

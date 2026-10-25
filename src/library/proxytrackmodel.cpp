@@ -47,6 +47,10 @@ int ProxyTrackModel::columnIndexFromSortColumnId(TrackModel::SortColumnId sortCo
                          : -1;
 }
 
+int ProxyTrackModel::fieldIndex(const QString& fieldName) const {
+    return m_pTrackModel ? m_pTrackModel->fieldIndex(fieldName) : -1;
+}
+
 TrackId ProxyTrackModel::getTrackId(const QModelIndex& index) const {
     QModelIndex indexSource = mapToSource(index);
     return m_pTrackModel ? m_pTrackModel->getTrackId(indexSource) : TrackId();
