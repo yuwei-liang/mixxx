@@ -547,6 +547,23 @@ void ControllerScriptEngineLegacy::handleScreenFrame(
     // compilers that don't support it (e.g. older than Xcode 14.3/macOS 13)
     QByteArray input(reinterpret_cast<const char*>(frame.constBits()), frame.sizeInBytes());
 
+    // A transform that sends only what changed returns nothing for a frame
+    // identical to the last two; skip the JS call for those, since comparing
+    // a whole frame in interpreted JS costs far more than this memcmp. The
+    // empty frame still has to go through: sending is what schedules the
+    // next render.
+    auto& repeat = m_screenRepeats[screenInfo.identifier];
+    if (input == repeat.lastFrame) {
+        if (++repeat.count >= 2 && pScreen->getTransform().isCallable()) {
+            m_renderingScreens[screenInfo.identifier]->requestSendingFrameData(
+                    m_pController, QByteArray());
+            return;
+        }
+    } else {
+        repeat.lastFrame = input;
+        repeat.count = 0;
+    }
+
     if (!pScreen->getTransform().isCallable() && screenInfo.rawData) {
         m_renderingScreens[screenInfo.identifier]->requestSendingFrameData(m_pController, input);
         return;

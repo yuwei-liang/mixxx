@@ -120,6 +120,13 @@ class ControllerScriptEngineLegacy : public ControllerScriptEngineBase {
     QList<QString> m_scriptFunctionPrefixes;
 #ifdef MIXXX_USE_QML
     QHash<QString, std::shared_ptr<ControllerRenderingEngine>> m_renderingScreens;
+    struct ScreenRepeat {
+        QByteArray lastFrame;
+        int count = 0;
+    };
+    // per screen: the last frame handed to the transform and how many times
+    // in a row it came back unchanged
+    QHash<QString, ScreenRepeat> m_screenRepeats;
     // Contains all the scenes loaded for this mapping. Key is the scene
     // identifier (LegacyControllerMapping::ScreenInfo::identifier), value in
     // the QML root item.
