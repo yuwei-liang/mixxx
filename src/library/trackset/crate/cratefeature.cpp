@@ -550,6 +550,10 @@ void CrateFeature::slotAutoDjTrackSourceChanged() {
 QModelIndex CrateFeature::rebuildChildModel(CrateId selectedCrateId) {
     qDebug() << "CrateFeature::rebuildChildModel()" << selectedCrateId;
 
+    // Both indices point into the TreeItems removed below. A stale
+    // m_lastClickedIndex crashed the next slotCrateTableChanged(), e.g. when
+    // a new crate was added to Auto DJ while another feature was selected.
+    m_lastClickedIndex = QModelIndex();
     m_lastRightClickedIndex = QModelIndex();
 
     TreeItem* pRootItem = m_pSidebarModel->getRootItem();
