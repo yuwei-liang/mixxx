@@ -1492,7 +1492,7 @@ bool Track::setStemInfosWhileLocked(QList<StemInfo> stemInfos) {
 bool Track::importPendingStemInfosWhileLocked() {
     const QList<StemInfo> stemInfos =
             mixxx::StemInfoImporter::importStemInfos(
-                    getLocation());
+                    mixxx::StemInfoImporter::stemSource(getLocation()));
 
     return setStemInfosWhileLocked(stemInfos);
 }
@@ -1958,7 +1958,8 @@ void Track::updateStreamInfoFromSource(
     const bool importBeats = m_pBeatsImporterPending && !m_pBeatsImporterPending->isEmpty();
     const bool importCueInfos = m_pCueInfoImporterPending && !m_pCueInfoImporterPending->isEmpty();
 #ifdef __STEM__
-    const bool importStemInfos = mixxx::StemInfoImporter::maybeStemFile(getLocation());
+    const bool importStemInfos = mixxx::StemInfoImporter::maybeStemFile(
+            mixxx::StemInfoImporter::stemSource(getLocation()));
 #endif
 
     if (!importBeats && !importCueInfos

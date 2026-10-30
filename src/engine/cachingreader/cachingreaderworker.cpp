@@ -1,5 +1,9 @@
 #include "engine/cachingreader/cachingreaderworker.h"
 
+#ifdef __STEM__
+#include "track/steminfoimporter.h"
+#endif
+
 #include <QAtomicInt>
 #include <QtDebug>
 
@@ -219,7 +223,15 @@ void CachingReaderWorker::loadTrack(const TrackPointer& pTrack) {
 #ifdef __STEM__
     config.setStemMask(stemMask);
 #endif
+#ifdef __STEM__
+    // TEMP(dj-library): a track's stem companion plays in its place (see
+    // StemInfoImporter::stemSource)
+    m_pAudioSource = SoundSourceProxy(pTrack,
+            QUrl::fromLocalFile(mixxx::StemInfoImporter::stemSource(pTrack->getLocation())))
+                             .openAudioSource(config);
+#else
     m_pAudioSource = SoundSourceProxy(pTrack).openAudioSource(config);
+#endif
     if (!m_pAudioSource) {
         kLogger.warning()
                 << m_group

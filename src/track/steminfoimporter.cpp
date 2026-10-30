@@ -1,5 +1,8 @@
 #include "track/steminfoimporter.h"
 
+#include <QDir>
+#include <QFileInfo>
+
 #include <QDataStream>
 #include <QFile>
 #include <QJsonArray>
@@ -95,6 +98,20 @@ uint32_t seekTillAtom(QIODevice* reader,
 }
 
 } // anonymous namespace
+
+// static
+QString StemInfoImporter::stemSource(const QString& location) {
+    const QString dir = qEnvironmentVariable("MIXXX_STEMS_DIR");
+    if (dir.isEmpty() || location.isEmpty()) {
+        return location;
+    }
+    const QFileInfo original(location);
+    const QString companion = QStringLiteral("%1/%2/%3.stem.mp4")
+                                      .arg(dir,
+                                              original.dir().dirName(),
+                                              original.completeBaseName());
+    return QFileInfo::exists(companion) ? companion : location;
+}
 
 // static
 bool StemInfoImporter::hasStemAtom(const QString& filePath) {

@@ -443,6 +443,13 @@ SoundSourceProxy::SoundSourceProxy(TrackPointer pTrack)
     findProviderAndInitSoundSource();
 }
 
+SoundSourceProxy::SoundSourceProxy(TrackPointer pTrack, const QUrl& url)
+        : m_pTrack(std::move(pTrack)),
+          m_url(url),
+          m_providerRegistrations(allProviderRegistrationsForUrl(m_url)) {
+    findProviderAndInitSoundSource();
+}
+
 SoundSourceProxy::SoundSourceProxy(const QUrl& url)
         : m_url(url),
           m_providerRegistrations(allProviderRegistrationsForUrl(m_url)) {

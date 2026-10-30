@@ -64,6 +64,10 @@ class SoundSourceProxy {
 
     explicit SoundSourceProxy(TrackPointer pTrack);
 
+    /// TEMP(dj-library): opens `url` for the track, which still gets the stream
+    /// info: how a deck plays a track's stem companion (StemInfoImporter::stemSource).
+    SoundSourceProxy(TrackPointer pTrack, const QUrl& url);
+
     // Only needed for testing all available providers explicitly
     SoundSourceProxy(
             TrackPointer pTrack,
