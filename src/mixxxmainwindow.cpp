@@ -23,6 +23,7 @@
 #include "widget/winitialglwidget.h"
 #endif
 
+#include "controllers/controllermanager.h"
 #include "controllers/keyboard/keyboardeventfilter.h"
 #include "coreservices.h"
 #include "defs_urls.h"
@@ -557,7 +558,13 @@ MixxxMainWindow::~MixxxMainWindow() {
 
     m_pCoreServices->getControlIndicatorTimer()->setLegacyVsyncEnabled(false);
 
-    qDebug() << t.elapsed(false).debugMillisWithUnit() << "deleting ControllerManager";
+    // The ControllerManager itself is deleted by CoreServices, but the
+    // controller screens render the same waveforms as the skin, through
+    // WaveformWidgetFactory, on their own threads. Stop them first.
+    qDebug() << t.elapsed(false).debugMillisWithUnit() << "shutting down controllers";
+    if (m_pCoreServices->getControllerManager()) {
+        m_pCoreServices->getControllerManager()->shutdown();
+    }
 
     WaveformWidgetFactory::destroy();
 

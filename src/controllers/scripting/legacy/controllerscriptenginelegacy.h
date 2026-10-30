@@ -118,6 +118,8 @@ class ControllerScriptEngineLegacy : public ControllerScriptEngineBase {
 
     QJSValue m_makeArrayBufferWrapperFunction;
     QList<QString> m_scriptFunctionPrefixes;
+    // Set while shutdown() runs, which may re-enter it through event loops.
+    bool m_isShuttingDown{false};
 #ifdef MIXXX_USE_QML
     QHash<QString, std::shared_ptr<ControllerRenderingEngine>> m_renderingScreens;
     struct ScreenRepeat {

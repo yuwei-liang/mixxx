@@ -480,8 +480,14 @@ bool ControllerRenderingEngine::stop() {
 void ControllerRenderingEngine::send(Controller* controller, const QByteArray& frame) {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
     ScopedTimer t(QStringLiteral("ControllerRenderingEngine::send"));
-    if (!frame.isEmpty()) {
-        VERIFY_OR_TERMINATE(controller->sendBytes(frame), "Unable to send frame to device");
+    if (!frame.isEmpty() && !controller->sendBytes(frame)) {
+        // Usually the device is gone (unplugged). Don't quit the thread from
+        // here: finish() would then delete the window, and with it touch the
+        // scene, while the controller thread may be running it. Render no
+        // further frame and let the engine stop us from its own thread.
+        kLogger.warning() << "Unable to send frame to device";
+        emit stopping();
+        return;
     }
 
     if (CmdlineArgs::Instance()

@@ -43,6 +43,14 @@ class ControllerManager : public QObject {
     /// Prevent other parts of Mixxx from having to manually connect to our slots
     void setUpDevices() { emit requestSetUpDevices(); };
 
+    /// Close all controllers and stop the ControllerManager thread, blocking
+    /// until it is done. This also stops and joins the controller screen
+    /// render threads, so it must be called before anything they use
+    /// (WaveformWidgetFactory, the QML singletons, PlayerManager, ...) goes
+    /// away. Called from the main thread; safe to call more than once. The
+    /// destructor calls it too.
+    void shutdown();
+
     static QList<QString> getMappingPaths(UserSettingsPointer pConfig);
 
   signals:
@@ -116,5 +124,9 @@ class ControllerManager : public QObject {
     /// stop), which would otherwise deliver another deviceLost or a reconnect
     /// tick in the middle of it.
     bool m_changingLostControllers{false};
+    /// Set by slotShutdown(). Closing the controllers runs nested event loops,
+    /// which may still deliver a queued deviceLost for a controller that is
+    /// being deleted. Accessed only from the ControllerManager thread.
+    bool m_isShuttingDown{false};
     QSet<Controller*> m_watchedControllers;
 };

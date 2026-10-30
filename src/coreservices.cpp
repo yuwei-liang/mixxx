@@ -1143,6 +1143,14 @@ void CoreServices::finalize() {
     Timer t("CoreServices::~CoreServices");
     t.start();
 
+    // Close the controllers and join their screen render threads before
+    // anything they use is released or unregistered below, and before the
+    // configuration is saved. Usually already done by ~MixxxMainWindow.
+    qDebug() << t.elapsed(false).debugMillisWithUnit() << "shutting down controllers";
+    if (m_pControllerManager) {
+        m_pControllerManager->shutdown();
+    }
+
 #ifdef MIXXX_USE_QML
     // Delete all the QML singletons in order to prevent controller leaks
     mixxx::qml::QmlEffectsManagerProxy::registerEffectsManager(nullptr);

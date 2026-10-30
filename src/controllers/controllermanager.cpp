@@ -150,10 +150,17 @@ ControllerManager::~ControllerManager() {
     // m_pThread->quit(). We must wait for the thread to finish before our
     // members (m_pollTimer, m_pControllerLearningEventFilter, …) are destroyed,
     // because they may still be accessed by the thread's event loop.
-    emit requestShutdown(); // clazy:exclude=incorrect-emit
-    m_pThread->wait();
+    shutdown();
     // m_pThread and m_pControllerLearningEventFilter are released by unique_ptr
     // after this point, in reverse declaration order.
+}
+
+void ControllerManager::shutdown() {
+    DEBUG_ASSERT_THIS_QOBJECT_THREAD_ANTI_AFFINITY();
+    // Once the thread has finished, the queued request is never delivered and
+    // wait() returns at once, so calling this again is harmless.
+    emit requestShutdown(); // clazy:exclude=incorrect-emit
+    m_pThread->wait();
 }
 
 ControllerLearningEventFilter* ControllerManager::getControllerLearningEventFilter() const {
@@ -195,15 +202,17 @@ void ControllerManager::slotInitialize() {
 
 void ControllerManager::slotShutdown() {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
+    m_isShuttingDown = true;
     stopPolling();
     m_reconnectTimer.stop();
     m_lostControllers.clear();
 
-    // Clear m_enumerators before deleting the enumerators to prevent other code
-    // paths from accessing them during teardown.
+    // Clear m_enumerators and m_controllers before deleting the enumerators to
+    // prevent other code paths from accessing them during teardown.
     auto locker = lockMutex(&m_mutex);
     std::vector<std::unique_ptr<ControllerEnumerator>> enumerators =
             std::move(m_enumerators); // m_enumerators is guaranteed empty after move
+    m_controllers.clear();
     locker.unlock();
 
     // Delete enumerators (and their owned Controllers) by letting unique_ptrs
@@ -442,6 +451,10 @@ void ControllerManager::watchForDeviceLoss(Controller* pController) {
 
 void ControllerManager::controllerLost(Controller* pController) {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
+    if (m_isShuttingDown) {
+        // pController may already be deleted.
+        return;
+    }
     if (m_changingLostControllers) {
         QTimer::singleShot(100, this, [this, pController]() { controllerLost(pController); });
         return;
@@ -484,7 +497,7 @@ void ControllerManager::controllerLost(Controller* pController) {
 
 void ControllerManager::slotReconnectLostControllers() {
     DEBUG_ASSERT_THIS_QOBJECT_THREAD_AFFINITY();
-    if (m_changingLostControllers) {
+    if (m_changingLostControllers || m_isShuttingDown) {
         return;
     }
     m_changingLostControllers = true;

@@ -10,6 +10,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopedValueRollback>
 #include <QtEndian>
 #include <algorithm>
 #endif
@@ -631,6 +632,14 @@ void ControllerScriptEngineLegacy::handleScreenFrame(
 #endif
 
 void ControllerScriptEngineLegacy::shutdown() {
+    // The event loops run below may deliver a queued shutdown request, e.g.
+    // from a screen that could not send a frame because its device was just
+    // unplugged. The outer call finishes the job.
+    if (m_isShuttingDown) {
+        return;
+    }
+    const QScopedValueRollback<bool> shuttingDown(m_isShuttingDown, true);
+
     callShutdownFunction();
 
 #ifdef MIXXX_USE_QML
