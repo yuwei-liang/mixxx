@@ -164,8 +164,9 @@ QmlWaveformRendererFactory::Renderer QmlWaveformRendererRGB::create(
                       "on scene graph backend. Ignoring";
         options ^= allshader::WaveformRendererSignalBase::Option::HighDetail;
     }
-    pRenderer.reset(new allshader::WaveformRendererRGB(
-            waveformWidget, m_position, options));
+    auto* pRGB = new allshader::WaveformRendererRGB(waveformWidget, m_position, options);
+    pRGB->setEqGhostColor(m_eqGhostColor);
+    pRenderer.reset(pRGB);
     setup(dynamic_cast<allshader::WaveformRendererSignalBase*>(pRenderer.get()));
 
     return QmlWaveformRendererFactory::Renderer{

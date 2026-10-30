@@ -1,5 +1,7 @@
 #include "waveform/renderers/allshader/waveformrendererrgb.h"
 
+#include <algorithm>
+
 #include "rendergraph/material/rgbmaterial.h"
 #include "rendergraph/vertexupdaters/rgbvertexupdater.h"
 #include "track/track.h"
@@ -94,6 +96,10 @@ bool WaveformRendererRGB::preprocessInner() {
     float midGain = 1.0f;
     float highGain = 1.0f;
     getGains(&allGain, &lowGain, &midGain, &highGain);
+    // one scale for every track: take the deck's gain back out (see the header)
+    if (const double deckGain = m_waveformRenderer->getGain(); deckGain > 0.0) {
+        allGain = static_cast<float>(allGain / deckGain);
+    }
 
     const float breadth = static_cast<float>(m_waveformRenderer->getBreadth());
     const float halfBreadth = breadth / 2.0f;
@@ -118,9 +124,16 @@ bool WaveformRendererRGB::preprocessInner() {
 
     const int numVerticesPerLine = 6; // 2 triangles
 
+    // with the EQ ghost, every line is drawn twice: the whole signal, then the EQ'd one
+    const int linesPerPixel = m_eqGhost ? 2 : 1;
     const int reserved = numVerticesPerLine *
             // Slip renderer only render a single channel, so the vertices count doesn't change
-            ((splitLeftRight && !m_isSlipRenderer ? pixelLength * 2 : pixelLength) + 1);
+            ((splitLeftRight && !m_isSlipRenderer ? pixelLength * 2 : pixelLength) *
+                            linesPerPixel +
+                    1);
+    const float ghost_r = static_cast<float>(m_eqGhostColor.redF());
+    const float ghost_g = static_cast<float>(m_eqGhostColor.greenF());
+    const float ghost_b = static_cast<float>(m_eqGhostColor.blueF());
 
     geometry().setDrawingMode(Geometry::DrawingMode::Triangles);
     geometry().allocate(reserved);
@@ -188,10 +201,18 @@ bool WaveformRendererRGB::preprocessInner() {
             float maxMid = maxMidU * midGain;
             float maxHigh = maxHighU * highGain;
 
-            float allUnscaled = maxLowU + maxMidU + maxHighU;
+            // the height: mostly the bass, a little of the rest (see the header),
+            // in place of the whole signal's peak; with and without the EQ
+            const auto shape = [](float low, float rest) {
+                return std::min(m_maxValue,
+                        kBassShare * low + (1.0f - kBassShare) * rest / 2.0f);
+            };
+            const float shapeUnscaled = shape(maxLowU, maxMidU + maxHighU);
+            const float shapeHeard = shape(maxLow, maxMid + maxHigh);
+            maxAllChn[chn] = shapeUnscaled;
             float eqGain = 1.0f;
-            if (allUnscaled > 0.0f) {
-                eqGain = (maxLow + maxMid + maxHigh) / allUnscaled;
+            if (shapeUnscaled > 0.0f) {
+                eqGain = shapeHeard / shapeUnscaled;
             }
 
             // Use the gained maxLow, maxMid and maxHigh values to calculate the color components
@@ -214,6 +235,23 @@ bool WaveformRendererRGB::preprocessInner() {
             }
 
             // Lines are thin rectangles
+            if (m_eqGhost) {
+                if (!splitLeftRight) {
+                    vertexUpdater.addRectangle(
+                            {fpos - halfPixelSize,
+                                    halfBreadth - heightFactorAbs * maxAllChn[chn]},
+                            {fpos + halfPixelSize,
+                                    m_isSlipRenderer
+                                            ? halfBreadth
+                                            : halfBreadth + heightFactorAbs * maxAllChn[chn]},
+                            {ghost_r, ghost_g, ghost_b});
+                } else {
+                    vertexUpdater.addRectangle({fpos - halfPixelSize, halfBreadth},
+                            {fpos + halfPixelSize,
+                                    halfBreadth + heightFactor[chn] * maxAllChn[chn]},
+                            {ghost_r, ghost_g, ghost_b});
+                }
+            }
             if (!splitLeftRight) {
                 vertexUpdater.addRectangle(
                         {fpos - halfPixelSize,

@@ -207,6 +207,11 @@ class QmlWaveformRendererSignal
 class QmlWaveformRendererRGB
         : public QmlWaveformRendererSignal {
     Q_OBJECT
+    // When set, the EQ knobs no longer shrink the waveform out of sight: the
+    // whole signal stays drawn in this colour and what the EQ lets through is
+    // drawn over it in the band colours, so the beats and bass stay readable
+    // while a band is cut.
+    Q_PROPERTY(QColor eqGhostColor MEMBER m_eqGhostColor FINAL)
     QML_NAMED_ELEMENT(WaveformRendererRGB)
 
   public:
@@ -216,6 +221,9 @@ class QmlWaveformRendererRGB
     Renderer create(WaveformWidgetRenderer* waveformWidget,
             mixxx::qml::WaveformRendererSignalBaseOptions options)
             const override;
+
+  private:
+    QColor m_eqGhostColor;
 };
 
 class QmlWaveformRendererFiltered
