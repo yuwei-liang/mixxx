@@ -512,8 +512,8 @@ void CoreServices::initialize(QApplication* pApp) {
     //              "label": "Drop", "color": "#FF4500"}, ...]}
     // The beat grid replaces the track's own and is locked; a cue whose pad is
     // still taken (by a cue not listed in replaceLabels) is skipped. Working on
-    // the Track object, not the database, means a loaded deck updates at once
-    // and Mixxx saves it like any other edit.
+    // the Track object, not the database, means a loaded deck updates at once;
+    // the track is then saved to the database straight away.
     //
     // Progress: each running analysis keeps a <name>.status file there,
     //   {"total": 31, "done": 7, "failed": 1}
@@ -618,8 +618,13 @@ void CoreServices::initialize(QApplication* pApp) {
                     taken.insert(hotcue);
                     ++added;
                 }
-                qInfo() << "External analysis: applied to" << pTrack->getLocation()
-                        << "bpm" << bpm << "cues" << added;
+                // Saved now, not when the track leaves the cache: a deck or a
+                // screen can hold it until Mixxx quits, and a crash or kill
+                // before then lost the edit (If Only, 2026-10-29).
+                const auto saved = m_pTrackCollectionManager->saveTrack(pTrack);
+                qWarning() << "External analysis: applied to" << pTrack->getLocation()
+                           << "bpm" << bpm << "cues" << added << "saved"
+                           << (saved == TrackCollectionManager::SaveTrackResult::Saved);
             }
         });
         pTimer->start(1000);
