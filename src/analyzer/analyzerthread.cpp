@@ -1,5 +1,9 @@
 #include "analyzer/analyzerthread.h"
 
+#ifdef __STEM__
+#include "track/steminfoimporter.h"
+#endif
+
 #include <mutex>
 
 #include "analyzer/analyzerbeats.h"
@@ -128,8 +132,19 @@ void AnalyzerThread::doRun() {
         kLogger.debug() << "Analyzing" << m_currentTrack->getTrack()->getLocation();
 
         // Get the audio
+#ifdef __STEM__
+        // TEMP(dj-library): a track's stem companion is what the deck plays,
+        // so the waveform (with its stems) comes from it too
+        const TrackPointer pAnalyzed = m_currentTrack->getTrack();
+        mixxx::AudioSourcePointer audioSource =
+                SoundSourceProxy(pAnalyzed,
+                        QUrl::fromLocalFile(mixxx::StemInfoImporter::stemSource(
+                                pAnalyzed->getLocation())))
+                        .openAudioSource(openParams);
+#else
         mixxx::AudioSourcePointer audioSource =
                 SoundSourceProxy(m_currentTrack->getTrack()).openAudioSource(openParams);
+#endif
         if (!audioSource) {
             kLogger.warning()
                     << "Failed to open file for analyzing:"

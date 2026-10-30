@@ -174,6 +174,12 @@ bool WaveformRendererStem::preprocessInner() {
     // Per-band gain from the EQ knobs.
     float allGain(1.0);
     getGains(&allGain, nullptr, nullptr, nullptr);
+    // TEMP(dj-library): one scale for every track, as in WaveformRendererRGB:
+    // the deck's gain (GAIN knob x ReplayGain) shrank a loud master's stems to
+    // nothing, the more so as it was applied twice (here and to `max` below)
+    if (const double deckGain = m_waveformRenderer->getGain(); deckGain > 0.0) {
+        allGain = static_cast<float>(allGain / deckGain);
+    }
 
     const float breadth = static_cast<float>(m_waveformRenderer->getBreadth());
     const float stemBreadth = m_splitStemTracks ? breadth / 4.0f : 0;
@@ -239,7 +245,7 @@ bool WaveformRendererStem::preprocessInner() {
                 }
 
                 // Cast to float
-                float max = static_cast<float>(u8max) * allGain;
+                float max = static_cast<float>(u8max);
 
                 // Apply the gains
                 if (layerIdx) {
