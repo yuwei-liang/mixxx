@@ -21,6 +21,7 @@
 #include "soundio/sounddeviceportaudio.h"
 #include "soundio/soundmanagerconfig.h"
 #include "soundio/soundmanagerutil.h"
+#include "soundio/systemsounddevices.h"
 #include "util/cmdlineargs.h"
 #include "util/compatibility/qatomic.h"
 #include "util/defs.h"
@@ -571,40 +572,80 @@ void SoundManager::testStopOutputCallbacks() {
     }
 }
 
+std::optional<QStringList> SoundManager::listedSystemDevices() const {
+    if (m_config.getAPI() != SoundManagerConfig::kAPICoreAudio) {
+        return std::nullopt;
+    }
+    return mixxx::systemSoundDeviceNames();
+}
+
 void SoundManager::slotWatchDevices() {
+    const std::optional<QStringList> listed = listedSystemDevices();
     if (!m_lostDeviceNames.isEmpty()) {
+        if (listed && !mixxx::allSoundDevicesListed(m_lostDeviceNames, *listed)) {
+            // Restarting PortAudio is only worth it once the OS lists them
+            // again; then give them 1 s to settle.
+            m_checksUntilReopen = 2;
+            return;
+        }
         if (--m_checksUntilReopen <= 0) {
             m_checksUntilReopen = 4;
             reopenLostDevices();
         }
         return;
     }
-    const quint64 callbacks = m_outputCallbacks.load(std::memory_order_relaxed);
-    if (m_pControlObjectSoundStatusCO->get() != SOUNDMANAGER_CONNECTED ||
-            callbacks != m_lastOutputCallbacks) {
-        m_lastOutputCallbacks = callbacks;
-        m_stalledChecks = 0;
-        return;
-    }
-    // No output callback for 1.5 s while connected: the device is gone
-    // (CoreAudio stops calling back without reporting an error).
-    if (++m_stalledChecks < 3) {
-        return;
-    }
-    m_stalledChecks = 0;
     QStringList names;
     for (const auto& deviceId : m_config.getDevices()) {
         if (deviceId.name != kNetworkDeviceInternalName && !names.contains(deviceId.name)) {
             names.append(deviceId.name);
         }
     }
+    if (m_pControlObjectSoundStatusCO->get() != SOUNDMANAGER_CONNECTED) {
+        m_listedDeviceNames.clear();
+        m_lastOutputCallbacks = m_outputCallbacks.load(std::memory_order_relaxed);
+        m_stalledChecks = 0;
+        return;
+    }
+    if (listed) {
+        // Core Audio moves the stream of a device that goes away to the
+        // default output (the laptop speakers) and keeps calling back, so the
+        // callbacks below don't stop: ask the OS which devices are there.
+        const QStringList gone = mixxx::soundDevicesThatWentAway(
+                names, m_listedDeviceNames, *listed);
+        m_listedDeviceNames = *listed;
+        if (!gone.isEmpty()) {
+            qWarning() << "Sound devices" << gone << "went away; waiting for"
+                       << names << "to come back";
+            waitForLostDevices(names);
+            return;
+        }
+    }
+    const quint64 callbacks = m_outputCallbacks.load(std::memory_order_relaxed);
+    if (callbacks != m_lastOutputCallbacks) {
+        m_lastOutputCallbacks = callbacks;
+        m_stalledChecks = 0;
+        return;
+    }
+    // No output callback for 1.5 s while connected: the device is gone
+    // (CoreAudio may stop calling back without reporting an error).
+    if (++m_stalledChecks < 3) {
+        return;
+    }
+    m_stalledChecks = 0;
     if (names.isEmpty()) {
         return;
     }
     qWarning() << "Sound output stopped; waiting for" << names << "to come back";
+    waitForLostDevices(names);
+}
+
+void SoundManager::waitForLostDevices(const QStringList& names) {
+    // Closing stops the engine instead of playing on out of whatever device
+    // the OS fell back to.
     const bool sleepAfterClosing = false;
     closeDevices(sleepAfterClosing);
     m_lostDeviceNames = names;
+    m_listedDeviceNames.clear();
     m_checksUntilReopen = 4;
 }
 

@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "audio/types.h"
 #include "control/pollingcontrolproxy.h"
@@ -223,6 +224,10 @@ class SoundManager : public QObject {
     bool m_pipewireEnabled;
 
     void reopenLostDevices();
+    /// Closes the devices and waits for the named ones to be listed again
+    void waitForLostDevices(const QStringList& names);
+    /// The devices the OS lists now, when it can tell for the configured API
+    std::optional<QStringList> listedSystemDevices() const;
 
     /// Counts output callbacks of the clock reference device
     std::atomic<quint64> m_outputCallbacks{0};
@@ -233,4 +238,6 @@ class SoundManager : public QObject {
     /// waiting for them to come back
     QStringList m_lostDeviceNames;
     int m_checksUntilReopen{0};
+    /// The devices the OS listed at the previous check while connected
+    QStringList m_listedDeviceNames;
 };
