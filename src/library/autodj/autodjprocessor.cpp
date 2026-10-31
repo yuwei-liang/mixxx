@@ -394,6 +394,11 @@ AutoDJProcessor::AutoDJError AutoDJProcessor::skipNext() {
 }
 
 AutoDJProcessor::AutoDJError AutoDJProcessor::toggleAutoDJ(bool enable) {
+    if (externalAutopilot()) {
+        m_enabledAutoDJ.setAndConfirm(enable ? 1.0 : 0.0);
+        emitAutoDJStateChanged(m_eState);
+        return ADJ_OK;
+    }
     if (enable) { // Enable Auto DJ
         DeckAttributes* pLeftDeck = getLeftDeck();
         DeckAttributes* pRightDeck = getRightDeck();

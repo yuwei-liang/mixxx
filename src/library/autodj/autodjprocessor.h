@@ -180,6 +180,16 @@ class AutoDJProcessor : public QObject {
                     int iAutoDJPlaylistId);
     virtual ~AutoDJProcessor() = default;
 
+    // LOCAL(dj-library): with MIXXX_AUTOPILOT set, Auto DJ's switch belongs to
+    // the S5 screens' autopilot, which mixes the queue itself: enabling it
+    // only sets [AutoDJ],enabled, and this processor never loads or fades.
+    static bool externalAutopilot() {
+        return qEnvironmentVariableIsSet("MIXXX_AUTOPILOT");
+    }
+    bool autopilotEnabled() const {
+        return m_enabledAutoDJ.toBool();
+    }
+
     AutoDJState getState() const {
         return m_eState;
     }

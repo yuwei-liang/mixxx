@@ -311,6 +311,19 @@ void DlgAutoDJ::transitionSliderChanged(int value) {
 }
 
 void DlgAutoDJ::autoDJStateChanged(AutoDJProcessor::AutoDJState state) {
+    // LOCAL(dj-library): the autopilot keeps this processor disabled; the
+    // button shows the switch itself
+    if (AutoDJProcessor::externalAutopilot()) {
+        const bool on = m_pAutoDJProcessor->autopilotEnabled();
+        pushButtonAutoDJ->setChecked(on);
+        pushButtonAutoDJ->setToolTip(on ? m_disableBtnTooltip : m_enableBtnTooltip);
+        if (m_bShowButtonText) {
+            pushButtonAutoDJ->setText(on ? tr("Disable") : tr("Enable"));
+        }
+        pushButtonFadeNow->setEnabled(false);
+        pushButtonSkipNext->setEnabled(false);
+        return;
+    }
     if (state == AutoDJProcessor::ADJ_DISABLED) {
         pushButtonAutoDJ->setChecked(false);
         pushButtonAutoDJ->setToolTip(m_enableBtnTooltip);
