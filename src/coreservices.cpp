@@ -1006,6 +1006,14 @@ void CoreServices::initialize(QApplication* pApp) {
 
     m_pTouchShift = std::make_unique<ControlPushButton>(ConfigKey("[Controls]", "touch_shift"));
 
+    // LOCAL(dj-library): [Feedback],tag1..tag8, one per piece of feedback the S5
+    // screens send to the copilot (⌥1-8 in the keyboard mapping, Custom.kbd.cfg)
+    for (int i = 1; i <= 8; ++i) {
+        auto* pTag = new ControlPushButton(
+                ConfigKey(QStringLiteral("[Feedback]"), QStringLiteral("tag%1").arg(i)));
+        pTag->setParent(this);
+    }
+
     // The UI controls must be created here so that controllers can bind to
     // them on startup.
     m_pSkinControls = std::make_unique<SkinControls>();
