@@ -559,15 +559,23 @@ void CoreServices::initialize(QApplication* pApp) {
                 }
                 const QJsonObject result = QJsonDocument::fromJson(file.readAll()).object();
                 file.close();
-                file.remove();
                 const TrackId trackId(QVariant(result.value(QStringLiteral("id")).toInt()));
                 TrackPointer pTrack = m_pTrackCollectionManager
                         ? m_pTrackCollectionManager->getTrackById(trackId)
                         : TrackPointer();
                 if (!pTrack || !pTrack->getSampleRate().isValid()) {
-                    qWarning() << "External analysis: no usable track" << trackId;
+                    // Kept for the next tick: right after start the library is
+                    // not connected yet, and 223 results waiting in the inbox
+                    // were thrown away in that tenth of a second (2026-11-14).
+                    // Given up only once an hour old.
+                    if (QFileInfo(file).lastModified().secsTo(QDateTime::currentDateTime()) > 3600) {
+                        qWarning() << "External analysis: no usable track" << trackId
+                                   << "after an hour; dropped";
+                        file.remove();
+                    }
                     continue;
                 }
+                file.remove();
                 const double sampleRate = pTrack->getSampleRate().value();
                 const double bpm = result.value(QStringLiteral("bpm")).toDouble();
                 if (bpm > 0) {
