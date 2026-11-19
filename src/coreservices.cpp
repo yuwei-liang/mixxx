@@ -45,6 +45,8 @@
 #include "control/controlproxy.h"
 #include <QJsonDocument>
 #include <QTimer>
+#include <memory>
+#include "library/externalinboxpatience.h"
 #include "moc_coreservices.cpp"
 #include "preferences/dialog/dlgpreferences.h"
 #include "preferences/settingsmanager.h"
@@ -531,7 +533,11 @@ void CoreServices::initialize(QApplication* pApp) {
             pControl->setParent(this);
         }
         auto* pTimer = new QTimer(this);
-        connect(pTimer, &QTimer::timeout, this, [this, inbox, pTotal, pDone, pFailed]() {
+        auto pPatience = std::make_shared<ExternalInboxPatience>();
+        connect(pTimer,
+                &QTimer::timeout,
+                this,
+                [this, inbox, pTotal, pDone, pFailed, pPatience]() {
             const QDir dir(inbox);
             int total = 0;
             int done = 0;
@@ -567,14 +573,16 @@ void CoreServices::initialize(QApplication* pApp) {
                     // Kept for the next tick: right after start the library is
                     // not connected yet, and 223 results waiting in the inbox
                     // were thrown away in that tenth of a second (2026-11-14).
-                    // Given up only once an hour old.
-                    if (QFileInfo(file).lastModified().secsTo(QDateTime::currentDateTime()) > 3600) {
+                    // Given up after an hour waiting in this session (see
+                    // ExternalInboxPatience for why not the file's age).
+                    if (pPatience->giveUp(name, QDateTime::currentDateTime())) {
                         qWarning() << "External analysis: no usable track" << trackId
                                    << "after an hour; dropped";
                         file.remove();
                     }
                     continue;
                 }
+                pPatience->forget(name);
                 file.remove();
                 const double sampleRate = pTrack->getSampleRate().value();
                 const double bpm = result.value(QStringLiteral("bpm")).toDouble();
